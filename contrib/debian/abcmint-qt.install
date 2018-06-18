@@ -1,0 +1,6 @@
+abcmint-qt usr/bin
+share/pixmaps/abcmint32.xpm usr/share/pixmaps
+share/pixmaps/abcmint16.xpm usr/share/pixmaps
+share/pixmaps/abcmint128.png usr/share/pixmaps
+debian/abcmint-qt.desktop usr/share/applications
+debian/abcmint-qt.protocol usr/share/kde4/services/
