@@ -279,7 +279,6 @@ int main(int argc, char *argv[])
             // Shutdown the core and its threads, but don't exit Abcmint-Qt here
             threadGroup.interrupt_all();
             threadGroup.join_all();
-            Shutdown();
         }
         else
         {
@@ -293,6 +292,7 @@ int main(int argc, char *argv[])
     } catch (...) {
         handleRunawayException(NULL);
     }
+    Shutdown();
     return 0;
 }
 #endif // ABCMINT_QT_TEST

@@ -798,7 +798,7 @@ void CWallet::ReacceptWalletTransactions()
             CCoins coins;
             bool fUpdated = false;
             bool fFound = pcoinsTip->GetCoins(wtx.GetHash(), coins);
-            if (fFound || wtx.GetDepthInMainChain() >= 0)
+            if (fFound || wtx.GetDepthInMainChain() > 0)
             {
                 // Update fSpent if a tx got spent somewhere else by a copy of wallet.dat
                 for (unsigned int i = 0; i < wtx.vout.size(); i++)
@@ -1552,6 +1552,7 @@ bool CWallet::TopUpKeyPool()
 void CWallet::ReserveKeyFromKeyPool(int64& nIndex, CKeyPool& keypool)
 {
     nIndex = -1;
+    return;
     keypool.vchPubKey = CPubKey();
     {
         LOCK(cs_wallet);
