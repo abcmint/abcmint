@@ -1676,7 +1676,21 @@ public:
 
     uint64 GetBlockWork() const
     {
-        return nBits;
+        uint64 nChainWorkCalculate = 0;
+        uint64 nBitsCalculate = 0;
+        if (nHeight < 3024) {
+            nChainWorkCalculate = nBits;
+        } else {
+            nBitsCalculate = nBits - 40;
+            if (nBitsCalculate > 63) {
+                throw;
+            } else if (nBitsCalculate > 0) {
+                nChainWorkCalculate = ((uint64)1)<<nBitsCalculate;
+            } else {
+                nChainWorkCalculate = 0;
+            }
+        }
+        return nChainWorkCalculate;
     }
 
     bool IsInMainChain() const
