@@ -2283,7 +2283,6 @@ void GenerateAbcmints(bool fGenerate, CWallet* pwallet)
         return;
 
     minerThreads = new boost::thread_group();
-    nThreads = 1;
     for (int i = 0; i < nThreads; i++)
         minerThreads->create_thread(boost::bind(&AbcmintMiner, pwallet));
 }
