@@ -180,5 +180,6 @@ than the developer who wrote the code.
 See https://github.com/abcmint/QA/ for how to create a test plan.
 
 ### Mining Algorithm Using GPU 
-Mining algorithm using GPU can be found in the following website:
+A new program that can be used to do ABC mining on a GPU is recently release at
 http://polycephaly.org/projects/forcemq/data/MQForceGPU-20180724.tgz
+To use it correctly, one may have to do some small adjustments. 
