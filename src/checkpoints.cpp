@@ -66,7 +66,7 @@ namespace Checkpoints
         const MapCheckpoints& checkpoints = *Checkpoints().mapCheckpoints;
 
         MapCheckpoints::const_iterator i = checkpoints.find(nHeight);
-        if (i == checkpoints.end()&& (hash == i->second)) return true;
+        if (i == checkpoints.end()) return true;
         return hash == i->second;
     }
 
