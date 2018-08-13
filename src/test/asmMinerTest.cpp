@@ -18,6 +18,7 @@ TEST(asmMinerTest, GetBlockValue) {
        int64 temp =  GetBlockValue(loop, fees);
 	   sum += temp;
    }
+ //  std::cout<<"total number ABC	"<<sum<<std::endl;
    EXPECT_TRUE(sum == (pow(2,31) - 1)*COIN);  
 }
 
@@ -104,6 +105,7 @@ TEST(asmMinerTest, initBlockIndex) {
 	EXPECT_TRUE(CheckSolution(seedHash, NUM_EQUATIONS, block.nNonce));		
 	//// debug print
 	uint256 hash = block.GetHash();
+#if 0
 	std::cout<<"GenesisBlock hash: "<<hash.ToString().c_str()<<std::endl;
 	std::cout<<"GenesisBlock hashPrevBlock: "<<block.hashPrevBlock.ToString().c_str()<<std::endl;
 	std::cout<<"GenesisBlock hashMerkleRoot: "<<block.hashMerkleRoot.ToString().c_str()<<std::endl;
@@ -113,6 +115,7 @@ TEST(asmMinerTest, initBlockIndex) {
     std::cout<<"block nNonce: "<<block.nNonce.ToString().c_str()<<std::endl;
     std::cout<<"vtx size"<<block.vtx.size()<<std::endl;
 	std::cout<<"vMerkleTree size"<<block.vMerkleTree.size()<<std::endl;
+#endif
 	//printf("%s\n", hash.ToString().c_str());
 	//printf("%s\n", hashGenesisBlock.ToString().c_str());
 	//printf("%s\n", block.hashMerkleRoot.ToString().c_str());

@@ -20,8 +20,8 @@ LIBS = $(addprefix -L,$(BOOST_LIB_PATH) $(BDB_LIB_PATH) $(OPENSSL_LIB_PATH))
 #
 # BerkeleyDB.5.1 support
 #
-LIBS += -L /usr/local/BerkeleyDB.5.1/lib/ -ldb_cxx-5.1
-DEFS += $(addprefix -I,/usr/local/BerkeleyDB.5.1/include)
+#LIBS += -L /usr/local/BerkeleyDB.5.1/lib/ -ldb_cxx-5.1
+#DEFS += $(addprefix -I,/usr/local/BerkeleyDB.5.1/include)
 
 
 TESTDEFS = -DTEST_DATA_DIR=$(abspath test/data)
