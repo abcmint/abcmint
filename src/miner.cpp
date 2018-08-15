@@ -1489,7 +1489,7 @@ unsigned int ComputeMinWork(unsigned int nBase, int64 nTime)
         // Maximum 400% adjustment...
         bnResult += 4;
         // ... in best-case exactly 4-times-normal target time
-        if (pindexBest->nHeight < 20160) {
+        if (pindexBest->nHeight <= 22176) {
             nTime -= nTargetTimespan*4;
         } else {
             nTime -= nNewTargetTimespan*4;
@@ -1509,7 +1509,7 @@ unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHead
         return nProofOfWorkLimit;
 
     // Only change once per interval
-    if (pindexBest->nHeight < 20160) {
+    if (pindexLast->nHeight < 22176) {
         if ((pindexLast->nHeight+1) % nInterval != 0)  {
         // Special difficulty rule for testnet:
             if (fTestNet) {
@@ -1551,7 +1551,7 @@ unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHead
 	
     // Go back by what we want to be 14 days worth of blocks
     const CBlockIndex* pindexFirst = pindexLast;
-	if (pindexBest->nHeight < 20160) {
+	if (pindexLast->nHeight < 22176) {
         for (int i = 0; pindexFirst && i < nInterval-1; i++)
             pindexFirst = pindexFirst->pprev;
             assert(pindexFirst);
@@ -1563,7 +1563,7 @@ unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHead
     // Limit adjustment step
     int64 nActualTimespan = pindexLast->GetBlockTime() - pindexFirst->GetBlockTime();
     printf("  nActualTimespan = %" PRI64d "  before bounds\n", nActualTimespan);
-	if (pindexBest->nHeight < 20160) {
+	if (pindexLast->nHeight < 22176) {
         if (nActualTimespan < nTargetTimespan/4)
             nActualTimespan = nTargetTimespan/4;
         if (nActualTimespan > nTargetTimespan*4)
@@ -1577,7 +1577,7 @@ unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHead
 
     // Retarget
     int64 nAverageTime;
-	if (pindexBest->nHeight < 20160) {
+	if (pindexLast->nHeight < 22176) {
         nAverageTime = nActualTimespan / nInterval;
 	} else {
 		nAverageTime = nActualTimespan / nNewInterval;
@@ -1590,7 +1590,7 @@ unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHead
 
     /// debug print
     printf("GetNextWorkRequired RETARGET\n");
-	if (pindexBest->nHeight < 20160) {
+	if (pindexLast->nHeight < 22176) {
         printf("nTargetTimespan = %" PRI64d "    nActualTimespan = %" PRI64d "\n", nTargetTimespan, nActualTimespan);
 	} else {
 		printf("nTargetTimespan = %" PRI64d "	 nActualTimespan = %" PRI64d "\n", nNewTargetTimespan, nActualTimespan);
