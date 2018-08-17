@@ -33,8 +33,18 @@ namespace Checkpoints
     //   (no blocks before with a timestamp after, none after with
     //    timestamp before)
     // + Contains no strange transactions
-    static MapCheckpoints mapCheckpoints;
+    static MapCheckpoints mapCheckpoints =
+    boost::assign::map_list_of
+        ( 11111, uint256("0xae23a3406fbce0049505c3cf2d3ca0e384e27e6ccc45988c556fce4e98b70c01"))
+        ( 12345, uint256("0x6a89732f27c4c4d3503fd3c641934c29c924bb2f3459f6e865312e3888fc7b3d"))
+        ;
+	
     static const CCheckpointData data = {
+		&mapCheckpoints,
+        1533934627, // * UNIX timestamp of last checkpoint block
+        12738,   // * total number of transactions between genesis and last checkpoint
+                    //   (the tx=... number in the SetBestChain debug.log lines)
+        600.0     // * estimated number of transactions per day after checkpoint
     };
 
     static MapCheckpoints mapCheckpointsTestnet;
@@ -96,10 +106,10 @@ namespace Checkpoints
         if (!GetBoolArg("-checkpoints", true))
             return 0;
 
-       // const MapCheckpoints& checkpoints = *Checkpoints().mapCheckpoints;
-       // if (checkpoints.size() == 0) return 0;
+        const MapCheckpoints& checkpoints = *Checkpoints().mapCheckpoints;
+        if (checkpoints.size() == 0) return 0;
 
-       // return checkpoints.rbegin()->first;
+        return checkpoints.rbegin()->first;
        return 0;
     }
 
@@ -107,7 +117,7 @@ namespace Checkpoints
     {
         if (!GetBoolArg("-checkpoints", true))
             return NULL;
-#if 0
+
         const MapCheckpoints& checkpoints = *Checkpoints().mapCheckpoints;
 
         BOOST_REVERSE_FOREACH(const MapCheckpoints::value_type& i, checkpoints)
@@ -117,7 +127,7 @@ namespace Checkpoints
             if (t != mapBlockIndex.end())
                 return t->second;
         }
-	#endif
+
         return NULL;
     }
 }

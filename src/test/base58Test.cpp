@@ -86,8 +86,8 @@ TEST(base58Test, decodeBase58Check) {
 	for (int i = 0; i < 12; i++) {
 	    EXPECT_TRUE(address.SetString(addr[i]));
 		EXPECT_TRUE(address.GetKeyID(keyID));
-        std::cout<<keyID.ToString()<<std::endl;
-		std::cout<<address.ToString()<<std::endl;
+       // std::cout<<keyID.ToString()<<std::endl;
+		//std::cout<<address.ToString()<<std::endl;
 	}
 
 }
