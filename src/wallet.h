@@ -26,8 +26,8 @@ class COutput;
 /** (client) version numbers for particular wallet features */
 enum WalletFeature
 {
-    FEATURE_BASE = 10000, // the earliest version new wallets supports (only useful for getinfo's clientversion output)
-    FEATURE_LATEST = 10000
+    FEATURE_BASE = 1, // the earliest version new wallets supports (only useful for getinfo's clientversion output)
+    FEATURE_LATEST = 1
 };
 
 
