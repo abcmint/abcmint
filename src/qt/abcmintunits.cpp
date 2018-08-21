@@ -67,9 +67,9 @@ int AbcmintUnits::amountDigits(int unit)
 {
     switch(unit)
     {
-    case ABC: return 8; // 21,000,000 (# digits, without commas)
-    case mABC: return 11; // 21,000,000,000
-    case uABC: return 14; // 21,000,000,000,000
+    case ABC: return 8; // 21,474,836,470,000,000 (# digits, without commas)
+    case mABC: return 11; // 21,474,836,470,000,000,000
+    case uABC: return 14; // 21,474,836,470,000,000,000,000
     default: return 0;
     }
 }
