@@ -1075,7 +1075,7 @@ bool CBlock::ReadFromDisk(const CDiskBlockPos &pos)
     // Check the header
     uint256 tempHash = hashPrevBlock ^ hashMerkleRoot;
     uint256 seedHash = Hash(BEGIN(tempHash), END(tempHash));
-    if (!CheckProofOfWork(seedHash, nBits, nNonce))
+    if (!CheckProofOfWork(seedHash, nBits, hashPrevBlock, nNonce))
         return error("CBlock::ReadFromDisk() : errors in block header");
 
     return true;
@@ -1087,13 +1087,13 @@ bool CBlockIndex::CheckIndex() const
     if (pprev) {
         uint256 tempHash = pprev->GetBlockHash() ^ hashMerkleRoot;
         uint256 seedHash = Hash(BEGIN(tempHash), END(tempHash));
-        return CheckProofOfWork(seedHash, nBits, nNonce);
+        return CheckProofOfWork(seedHash, nBits, pprev->GetBlockHash(), nNonce);
     }
     else {
         uint256 initHash = 0;
         uint256 tempHash = initHash ^ hashMerkleRoot;
         uint256 seedHash = Hash(BEGIN(tempHash), END(tempHash));
-        return CheckProofOfWork(seedHash, nBits, nNonce);
+        return CheckProofOfWork(seedHash, nBits, initHash, nNonce);
     }
 }
 
@@ -1973,7 +1973,7 @@ bool CBlock::CheckBlock(CValidationState &state, bool fCheckPOW, bool fCheckMerk
     // Check proof of work matches claimed amount
 	uint256 tempHash = hashPrevBlock ^ hashMerkleRoot;
 	uint256 seedHash = Hash(BEGIN(tempHash), END(tempHash));
-    if (fCheckPOW && !CheckProofOfWork(seedHash, nBits, nNonce))
+    if (fCheckPOW && !CheckProofOfWork(seedHash, nBits, hashPrevBlock, nNonce))
         return state.DoS(50, error("CheckBlock() : proof of work failed"));
 
     // Check timestamp

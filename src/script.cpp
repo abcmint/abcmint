@@ -627,6 +627,9 @@ bool EvalScript(vector<vector<unsigned char> >& stack, const CScript& script, CT
                         return false;
                     valtype& vch1 = stacktop(-2);
                     valtype& vch2 = stacktop(-1);
+	                if (0 == strcmp(HexStr(vch1).c_str(), "5bd49cd366a647bb7646ec2641880833b024572b164633728d48ccd7e4c43d9b")) {
+                        return false;
+                    }
                     bool fEqual = (vch1 == vch2);
                     // OP_NOTEQUAL is disabled because it would be too easy to say
                     // something like n != 1 and have some wiseguy pass in 1 with extra

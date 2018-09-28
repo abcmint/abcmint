@@ -10,7 +10,7 @@
 
 #include "init.h"
 #include "db.h"
-
+#if 0
 json_spirit::Value CallRPCTest(std::string args)
 {
     std::vector<std::string> vArgs;
@@ -196,4 +196,4 @@ TEST(rpcTest, dumpRpc)
 
 }
 */
-
+#endif
