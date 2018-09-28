@@ -1630,6 +1630,7 @@ static void  NewGenCoeffMatrix(uint256 hash, unsigned int nBits, std::vector<uin
     unsigned int mEquations = nBits;
     unsigned int nUnknowns = nBits+8;
     unsigned int nTerms = 1 + (nUnknowns+1)*(nUnknowns)/2;
+	//printf("\n **********************NewGenCoeffMatrix ***********************\n");
 
     //generate the first polynomial coefficients.
     unsigned char in[32], out[32];
@@ -1664,6 +1665,7 @@ static void  GenCoeffMatrix(uint256 hash, unsigned int nBits, std::vector<uint8_
     unsigned int mEquations = nBits;
     unsigned int nUnknowns = nBits+8;
     unsigned int nTerms = 1 + (nUnknowns+1)*(nUnknowns)/2;
+	//printf("\n $$$$$$$$$$$$$$$$$$$$$$   OLD  GenCoeffMatrix $$$$$$$$$$$$$$$$$$$$\n");
 
     //generate the first polynomial coefficients.
     unsigned char in[32], out[32];
@@ -1810,7 +1812,7 @@ uint256 SerchSolution(uint256 hash, unsigned int nBits, uint256 randomNonce, CBl
     unsigned int nTerms = 1 + (nUnknowns+1)*(nUnknowns)/2;
     std::vector<uint8_t> coeffMatrix;
     coeffMatrix.resize(mEquations*nTerms);
-	if (pindexPrev->nHeight < 26300) {
+	if (pindexPrev->nHeight < 26299) {
         GenCoeffMatrix(hash, nBits, coeffMatrix);
 	} else {
         NewGenCoeffMatrix(hash, nBits, coeffMatrix);
@@ -2384,6 +2386,13 @@ void static AbcmintMiner(CWallet *pwallet)
         int64 nStart = GetTime();
         uint256 tempHash = pblock->hashPrevBlock ^ pblock->hashMerkleRoot;
         uint256 seedHash = Hash(BEGIN(tempHash), END(tempHash));
+		uint256 prevblockhash = 0;
+		if (pindexBest->GetBlockHash() == hashGenesisBlock || pindexPrev->pprev->GetBlockHash() == hashGenesisBlock) {
+		    prevblockhash = 0;
+		} else {
+            prevblockhash = pindexPrev->GetBlockHash();
+		}
+
         while(true)
         {
             uint256 nNonceFound;
@@ -2394,7 +2403,7 @@ void static AbcmintMiner(CWallet *pwallet)
             // Check if something found
             if (nNonceFound !=  -1)
             {
-                if (CheckSolution(seedHash, pblock->nBits, pindexPrev->pprev->GetBlockHash(), nNonceFound))
+                if (CheckSolution(seedHash, pblock->nBits, prevblockhash, nNonceFound))
                 {
                     // Found a solution
                     pblock->nNonce = nNonceFound;
