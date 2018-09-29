@@ -1841,7 +1841,7 @@ uint256 SerchSolution(uint256 hash, unsigned int nBits, uint256 randomNonce, CBl
 
 }
 
-bool CheckSolution(uint256 hash, unsigned int nBits, uint256 preblockhash, uint256 nNonce) {
+bool CheckSolution(uint256 hash, unsigned int nBits, uint256 preblockhash, int nblockversion, uint256 nNonce) {
     unsigned int mEquations = nBits;
     unsigned int nUnknowns = nBits+8;
     unsigned int nTerms = 1 + (nUnknowns+1)*(nUnknowns)/2;
@@ -1854,10 +1854,17 @@ bool CheckSolution(uint256 hash, unsigned int nBits, uint256 preblockhash, uint2
 	uint256 initHash = 0;
     if (preblockhash != initHash) {
         std::map<uint256, CBlockIndex*>::iterator mi = mapBlockIndex.find(preblockhash);
-        if (mi == mapBlockIndex.end())
-            return false;
-        pindexPrev = (*mi).second;
-        height = pindexPrev->nHeight+1;
+        if (mi == mapBlockIndex.end()) {
+            if (nblockversion == 1) {
+                height = 0;
+			} 
+			if (nblockversion == 2) {
+                height = 26300;
+			}
+		} else {
+            pindexPrev = (*mi).second;
+            height = pindexPrev->nHeight+1;
+		}
     } else {
         height = 0;
 	}
@@ -1894,7 +1901,7 @@ bool CheckSolution(uint256 hash, unsigned int nBits, uint256 preblockhash, uint2
 }
 
 
-bool CheckProofOfWork(uint256 hash, unsigned int nBits, uint256 preblockhash, uint256 nNonce)
+bool CheckProofOfWork(uint256 hash, unsigned int nBits, uint256 preblockhash, int nblockversion,  uint256 nNonce)
 {
     unsigned int bnTarget = nBits;
 
@@ -1903,7 +1910,7 @@ bool CheckProofOfWork(uint256 hash, unsigned int nBits, uint256 preblockhash, ui
         return error("CheckProofOfWork() : nBits below minimum work");
 
     // Check proof of work matches claimed amount
-    if (!CheckSolution(hash, nBits, preblockhash,nNonce))
+    if (!CheckSolution(hash, nBits, preblockhash, nblockversion, nNonce))
         return error("CheckProofOfWork() : hash doesn't match nBits");
 
     return true;
@@ -2403,7 +2410,7 @@ void static AbcmintMiner(CWallet *pwallet)
             // Check if something found
             if (nNonceFound !=  -1)
             {
-                if (CheckSolution(seedHash, pblock->nBits, prevblockhash, nNonceFound))
+                if (CheckSolution(seedHash, pblock->nBits, prevblockhash, pblock->nVersion, nNonceFound))
                 {
                     // Found a solution
                     pblock->nNonce = nNonceFound;
