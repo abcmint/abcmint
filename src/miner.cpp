@@ -1812,7 +1812,7 @@ uint256 SerchSolution(uint256 hash, unsigned int nBits, uint256 randomNonce, CBl
     unsigned int nTerms = 1 + (nUnknowns+1)*(nUnknowns)/2;
     std::vector<uint8_t> coeffMatrix;
     coeffMatrix.resize(mEquations*nTerms);
-	if (pindexPrev->nHeight < 26299) {
+	if (pindexPrev->nHeight < 25216) {
         GenCoeffMatrix(hash, nBits, coeffMatrix);
 	} else {
         NewGenCoeffMatrix(hash, nBits, coeffMatrix);
@@ -1859,7 +1859,7 @@ bool CheckSolution(uint256 hash, unsigned int nBits, uint256 preblockhash, int n
                 height = 0;
 			} 
 			if (nblockversion == 2) {
-                height = 26300;
+                height = 25217;
 			}
 		} else {
             pindexPrev = (*mi).second;
@@ -1868,7 +1868,7 @@ bool CheckSolution(uint256 hash, unsigned int nBits, uint256 preblockhash, int n
     } else {
         height = 0;
 	}
-    if (height < 26300) {
+    if (height < 25217) {
 	    GenCoeffMatrix(hash, nBits, coeffMatrix);
     } else {
         NewGenCoeffMatrix(hash, nBits, coeffMatrix);
