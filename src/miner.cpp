@@ -1908,7 +1908,8 @@ bool CheckProofOfWork(uint256 hash, unsigned int nBits, uint256 preblockhash, in
     // Check range
     if (bnTarget <= 0 || bnTarget > bnPowUpLimit)
         return error("CheckProofOfWork() : nBits below minimum work");
-
+    if (nNonce == -1 && nblockversion > 1)
+        return false;
     // Check proof of work matches claimed amount
     if (!CheckSolution(hash, nBits, preblockhash, nblockversion, nNonce))
         return error("CheckProofOfWork() : hash doesn't match nBits");
