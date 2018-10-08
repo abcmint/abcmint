@@ -218,7 +218,7 @@ void PubKeyScanner(CWallet* pwalletMain)
                 }
 
                 if(!UpdatePubKeyPos(pubKey, address)) {
-                    printf("address %s update public key position failed\n", address.c_str());
+                    printf("address %s update public key position return false\n", address.c_str());
                     allPosFound = false;
                     continue;
                 } else {
