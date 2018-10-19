@@ -99,7 +99,7 @@ bool GetPubKeyByPos(CDiskPubKeyPos pos, CPubKey& pubKey);
 
 bool UpdatePubKeyPos(CPubKey& pubKey, const std::string& address);
 
-void SearchPubKeyPos(boost::thread_group& threadGroup);
+void SearchPubKeyPos(bool fScan);
 
 #endif
 

@@ -247,7 +247,24 @@ void PubKeyScanner(CWallet* pwalletMain)
 }
 
 //more logic extention (offer rpc command to user to control this thread)
-void SearchPubKeyPos(boost::thread_group& threadGroup)
+void SearchPubKeyPos(bool fScan)
 {
-    threadGroup.create_thread(boost::bind(&PubKeyScanner, pwalletMain));
+    static boost::thread_group* scanerThreads = NULL;
+
+    int nThreads = GetArg("-scanerproclimit", -1);
+    if (nThreads < 0)
+        nThreads = 1;
+
+    if (scanerThreads != NULL)
+    {
+        scanerThreads->interrupt_all();
+        delete scanerThreads;
+        scanerThreads = NULL;
+    }
+
+    if (nThreads == 0 || !fScan)
+        return;
+
+    scanerThreads = new boost::thread_group();
+    scanerThreads->create_thread(boost::bind(&PubKeyScanner, pwalletMain));
 }
