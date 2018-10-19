@@ -236,7 +236,7 @@ void PubKeyScanner(CWallet* pwalletMain)
             } else
                 SetThreadPriority(THREAD_PRIORITY_NORMAL);
 
-            MilliSleep(allPosFound ? 120*60*1000 : 10*60*1000);
+            MilliSleep(allPosFound ? 4*60*60*1000 : 2*60*60*1000);
         }
     }
     catch (boost::thread_interrupted)
