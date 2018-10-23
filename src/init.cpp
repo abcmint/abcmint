@@ -297,6 +297,7 @@ std::string HelpMessage()
         "  -conf=<file>           " + _("Specify configuration file (default: abcmint.conf)") + "\n" +
         "  -pid=<file>            " + _("Specify pid file (default: abcmint.pid)") + "\n" +
         "  -gen                   " + _("Generate coins (default: 0)") + "\n" +
+        "  -search                " + _("Search public key position (default: 1)") + "\n" +
         "  -datadir=<dir>         " + _("Specify data directory") + "\n" +
         "  -dbcache=<n>           " + _("Set database cache size in megabytes (default: 25)") + "\n" +
         "  -timeout=<n>           " + _("Specify connection timeout in milliseconds (default: 5000)") + "\n" +
@@ -1061,7 +1062,7 @@ bool AppInit2(boost::thread_group& threadGroup)
     GenerateAbcmints(GetBoolArg("-gen", false), pwalletMain);
 
     //seach block position for public key  in the background
-    SearchPubKeyPos(threadGroup);
+    SearchPubKeyPos(GetBoolArg("-search", true));
 
     // ********************************************************* Step 13: finished
 

@@ -1540,3 +1540,38 @@ Value listlockunspent(const Array& params, bool fHelp)
     return ret;
 }
 
+Value getsearchpubkeypos(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 0)
+        throw runtime_error(
+            "getsearchpubkeypos\n"
+            "Returns true or false.");
+
+    return GetBoolArg("-search", true);
+}
+
+Value setsearchpubkeypos(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() < 1 || params.size() > 2)
+        throw runtime_error(
+            "setsearchpubkeypos <search> [searchproclimit]\n"
+            "<search> is true or false to turn search on or off.\n"
+            "search is limited to [searchproclimit] processors, -1 is unlimited.");
+
+    bool fSearch = true;
+    if (params.size() > 0)
+        fSearch = params[0].get_bool();
+
+    if (params.size() > 1)
+    {
+        int nSearchProcLimit = params[1].get_int();
+        mapArgs["-searchproclimit"] = itostr(nSearchProcLimit);
+        if (nSearchProcLimit == 0)
+            fSearch = false;
+    }
+    mapArgs["-search"] = (fSearch ? "1" : "0");
+
+    SearchPubKeyPos(fSearch);
+    return Value::null;
+}
+
