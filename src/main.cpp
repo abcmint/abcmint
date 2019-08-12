@@ -1093,7 +1093,7 @@ bool CBlockIndex::CheckIndex() const
         uint256 initHash = 0;
         uint256 tempHash = initHash ^ hashMerkleRoot;
         uint256 seedHash = Hash(BEGIN(tempHash), END(tempHash));
-        return CheckProofOfWork(seedHash, nBits, initHash, nVersion, nNonce);
+        return CheckProofOfWork(seedHash, nBits, initHash,nVersion, nNonce);
     }
 }
 

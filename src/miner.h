@@ -139,12 +139,12 @@ unsigned int ComputeMinWork(unsigned int nBase, int64 nTime);
 
 unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock);
 
-uint256 SerchSolution(uint256 hash, unsigned int nBits, uint256 randomNonce, CBlockIndex* pindexPrev);
+uint256 SerchSolution(uint256 hash, unsigned int nBits, int nBlockVersion, uint256 randomNonce, CBlockIndex* pindexPrev, int deviceID, int deviceCount);
 
-bool CheckSolution(uint256 hash, unsigned int nBits, uint256 preblockhash, int nblockversion, uint256 nNonce) ;
+bool CheckSolution(uint256 hash, unsigned int nBits,uint256 prevblockhash, int nblockversion, uint256 nNonce) ;
 
 /** Check whether a block hash satisfies the proof-of-work requirement specified by nBits */
-bool CheckProofOfWork(uint256 hash, unsigned int nBits, uint256 preblockhash, int nblockversion, uint256 nNonce);
+bool CheckProofOfWork(uint256 hash, unsigned int nBits, uint256 prevblockhash, int nblockversion, uint256 nNonce);
 
 /** Modify the extranonce in a block */
 void IncrementExtraNonce(CBlock* pblock, CBlockIndex* pindexPrev, unsigned int& nExtraNonce);

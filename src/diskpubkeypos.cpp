@@ -179,8 +179,6 @@ bool UpdatePubKeyPos(CPubKey& pubKey, const std::string& address)
             //find again
             if (!FindPubKeyPos(strPubKey, pos)) {
                 printf("find again, public key %s not found in block chain! \n", address.c_str());
-                //got a wrong position, update it to null
-                pwalletMain->AddPubKeyPos(address, pos);
                 found = false;
             } else {
                 printf("find again, public key %s found at height=%d, offset=%u. \n",
@@ -220,7 +218,7 @@ void PubKeyScanner(CWallet* pwalletMain)
                 }
 
                 if(!UpdatePubKeyPos(pubKey, address)) {
-                    printf("address %s update public key position return false\n", address.c_str());
+                  //  printf("address %s update public key position failed\n", address.c_str());
                     allPosFound = false;
                     continue;
                 } else {
@@ -236,7 +234,7 @@ void PubKeyScanner(CWallet* pwalletMain)
             } else
                 SetThreadPriority(THREAD_PRIORITY_NORMAL);
 
-            MilliSleep(allPosFound ? 4*60*60*1000 : 2*60*60*1000);
+            MilliSleep(allPosFound ? 120*60*1000 : 10*60*1000);
         }
     }
     catch (boost::thread_interrupted)
@@ -247,24 +245,7 @@ void PubKeyScanner(CWallet* pwalletMain)
 }
 
 //more logic extention (offer rpc command to user to control this thread)
-void SearchPubKeyPos(bool fScan)
+void SearchPubKeyPos(boost::thread_group& threadGroup)
 {
-    static boost::thread_group* scanerThreads = NULL;
-
-    int nThreads = GetArg("-scanerproclimit", -1);
-    if (nThreads < 0)
-        nThreads = 1;
-
-    if (scanerThreads != NULL)
-    {
-        scanerThreads->interrupt_all();
-        delete scanerThreads;
-        scanerThreads = NULL;
-    }
-
-    if (nThreads == 0 || !fScan)
-        return;
-
-    scanerThreads = new boost::thread_group();
-    scanerThreads->create_thread(boost::bind(&PubKeyScanner, pwalletMain));
+    threadGroup.create_thread(boost::bind(&PubKeyScanner, pwalletMain));
 }

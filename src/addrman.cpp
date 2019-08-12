@@ -499,11 +499,9 @@ void CAddrMan::GetAddr_(std::vector<CAddress> &vAddr)
     {
         if (vAddr.size() >= nNodes)
             break;
-        
         int nRndPos = GetRandInt(vRandom.size() - n) + n;
         SwapRandom(n, nRndPos);
         assert(mapInfo.count(vRandom[n]) == 1);
-        
         const CAddrInfo& ai = mapInfo[vRandom[n]];
         if (!ai.IsTerrible())
             vAddr.push_back(ai);

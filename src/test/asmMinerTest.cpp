@@ -9,7 +9,7 @@
 #include "miner.h"
 
 const static unsigned int DIFFMN = 8; 
-const static unsigned int NUM_EQUATIONS = 41; 
+const static unsigned int NUM_EQUATIONS = 45; 
 
 TEST(asmMinerTest, GetBlockValue) {
    int64 sum = 21474836470000000;
@@ -22,7 +22,7 @@ TEST(asmMinerTest, GetBlockValue) {
    EXPECT_TRUE(sum == (pow(2,31) - 1)*COIN);  
 }
 
-#if 0
+#if 1
 TEST(asmMinerTest, miner) {
 //	std::cout<<"start new found nonce:  "<<std::endl;
 
@@ -39,7 +39,7 @@ TEST(asmMinerTest, miner) {
 	} else {
         randomNonce = GetRandHash();
 	}
-
+        randomNonce = 0;
 	int64 startTime = GetTimeMicros();
 	uint256 nFoundNonce = SerchSolution(seedHash, NUM_EQUATIONS, randomNonce, pindexBest);
 	int64 diffTime = GetTimeMicros() - startTime;
@@ -102,7 +102,7 @@ TEST(asmMinerTest, initBlockIndex) {
 	block.nNonce   = uint256("0x0000000000000000000000000000000000000000000000000001ee7340a9a1d6");
 	uint256 tempHash = block.hashPrevBlock ^ block.hashMerkleRoot;
 	uint256 seedHash = Hash(BEGIN(tempHash), END(tempHash));
-	EXPECT_TRUE(CheckSolution(seedHash, NUM_EQUATIONS, 0 , 1, block.nNonce));		
+	EXPECT_TRUE(CheckSolution(seedHash, NUM_EQUATIONS, block.nNonce));		
 	//// debug print
 	uint256 hash = block.GetHash();
 #if 0
