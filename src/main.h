@@ -1755,9 +1755,6 @@ struct CBlockIndexWorkComparator
         if (pa->nChainWork > pb->nChainWork) return false;
         if (pa->nChainWork < pb->nChainWork) return true;
 
-        if (pa->GetBlockHash() < pb->GetBlockHash()) return false;
-        if (pa->GetBlockHash() > pb->GetBlockHash()) return true;
-
         return false; // identical blocks
     }
 };
