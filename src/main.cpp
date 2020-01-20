@@ -65,9 +65,6 @@ map<uint256, set<uint256> > mapOrphanTransactionsByPrev;
 
 const string strMessageMagic = "Abcmint Signed Message:\n";
 
-double dHashesPerSec = 0.0;
-int64 nHPSTimerStart = 0;
-
 // Settings
 int64 nTransactionFee = 0;
 

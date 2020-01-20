@@ -91,12 +91,6 @@ elif cmd == "getgenerate":
 	except:
 		print "\n---An error occurred---\n"
 
-elif cmd == "gethashespersec":
-	try:
-		print access.gethashespersec()
-	except:
-		print "\n---An error occurred---\n"
-
 elif cmd == "getinfo":
 	try:
 		print access.getinfo()
