@@ -104,8 +104,9 @@ Value getnewaddress(const Array& params, bool fHelp)
     if (params.size() > 0)
         strAccount = AccountFromValue(params[0]);
 
-    if (!pwalletMain->IsLocked())
-        pwalletMain->TopUpKeyPool();
+    EnsureWalletIsUnlocked();
+
+    pwalletMain->TopUpKeyPool();
 
     // Generate a new key that is added to wallet
     CPubKey newKey;
@@ -127,6 +128,7 @@ CAbcmintAddress GetAccountAddress(string strAccount, bool bForceNew=false)
 
     if (!account.vchPubKey.IsValid() || bForceNew)
     {
+        EnsureWalletIsUnlocked();
         if(pwalletMain->GetKeyFromPool(account.vchPubKey, false)) {
             pwalletMain->SetAddressBookName(account.vchPubKey.GetID(), strAccount);
             walletdb.WriteAccount(strAccount, account);

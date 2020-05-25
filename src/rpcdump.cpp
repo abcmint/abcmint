@@ -59,6 +59,8 @@ Value importkey(const Array& params, bool fHelp)
     if (params.size() > 2)
         fRescan = params[2].get_bool();
 
+    EnsureWalletIsUnlocked();
+
     CAbcmintSecret vchSecret;
     bool fGood = vchSecret.SetString(vArgs[0]);
 
@@ -115,6 +117,9 @@ Value dumpkey(const Array& params, bool fHelp)
     CKeyID keyID;
     if (!address.GetKeyID(keyID))
         throw JSONRPCError(RPC_TYPE_ERROR, "Address does not refer to a key");
+
+    EnsureWalletIsUnlocked();
+
     CSecret vchSecret;
     if (!pwalletMain->GetSecret(keyID, vchSecret))
         throw JSONRPCError(RPC_WALLET_ERROR, "Private key for address " + strAddress + " is not known");
