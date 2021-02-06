@@ -1,14 +1,12 @@
 // Copyright (c) 2018 The Abcmint developers
 
+#include "miner.h"
 
 #include "init.h"
-#include "miner.h"
 #include "wallet.h"
-
 
 using namespace std;
 using namespace boost;
-
 
 typedef union {
     __m128i v;
@@ -22,34 +20,33 @@ vector_t init_vector(int n_rows) {
 
 pck_vector_t pack(int n, const vector_t v) {
     pck_vector_t r = 0;
-    assert((unsigned int) n <= 8*sizeof(pck_vector_t));
+    assert((unsigned int)n <= 8 * sizeof(pck_vector_t));
 
-    for(int i=n-1; i>=0; i--) {
+    for (int i = n - 1; i >= 0; i--) {
         r = r << 1ll;
         r |= v[i] & 0x0001ll;
     }
     return r;
 }
 
-uint64_t to_gray(uint64_t i) {
-    return (i ^ (i >> 1ll));
-}
+uint64_t to_gray(uint64_t i) { return (i ^ (i >> 1ll)); }
 
 #ifdef __i386
 uint64_t rdtsc() {
     uint64_t x;
-    __asm__ volatile ("rdtsc" : "=A" (x));
+    __asm__ volatile("rdtsc" : "=A"(x));
     return x;
 }
 #else
 uint64_t rdtsc() {
     uint64_t a, d;
-    __asm__ volatile ("rdtsc" : "=a" (a), "=d" (d));
-    return (d<<32) | a;
+    __asm__ volatile("rdtsc" : "=a"(a), "=d"(d));
+    return (d << 32) | a;
 }
 #endif
 
-pck_vector_t packed_eval(LUT_t LUT, int n, int d, pck_vector_t F[], uint64_t i) {
+pck_vector_t packed_eval(LUT_t LUT, int n, int d, pck_vector_t F[],
+                         uint64_t i) {
     if (d == 2) {
         return packed_eval_deg_2(LUT, n, F, i);
     } else {
@@ -60,18 +57,17 @@ pck_vector_t packed_eval(LUT_t LUT, int n, int d, pck_vector_t F[], uint64_t i) 
 }
 
 // this ought to be optimized, unrolled, etc.
-void BFS(pck_vector_t *A, int start, int n,CBlockIndex* pindexPrev) {
-    for(int i=0; i<n; i++) {
+void BFS(pck_vector_t *A, int start, int n, CBlockIndex *pindexPrev) {
+    for (int i = 0; i < n; i++) {
         if (pindexPrev != pindexBest) {
             return;
         }
         int Sz = 1 << i;
         int Pos = start;
 
-        while(Pos < start + (1 << n)) {
-            for(int j=0; j<Sz; j++)
-            A[Pos + Sz + j] ^= A[Pos + j];
-            Pos += 2*Sz;
+        while (Pos < start + (1 << n)) {
+            for (int j = 0; j < Sz; j++) A[Pos + Sz + j] ^= A[Pos + j];
+            Pos += 2 * Sz;
             if (pindexPrev != pindexBest) {
                 return;
             }
@@ -79,48 +75,47 @@ void BFS(pck_vector_t *A, int start, int n,CBlockIndex* pindexPrev) {
     }
 }
 
-void hybrid_DFS_BFS(pck_vector_t *A, int from, int to, CBlockIndex* pindexPrev) {
-    if (from >= to-1) return;
+void hybrid_DFS_BFS(pck_vector_t *A, int from, int to,
+                    CBlockIndex *pindexPrev) {
+    if (from >= to - 1) return;
     if (pindexPrev != pindexBest) {
         return;
     }
-    int center = (to+from)/2;
-    int half_length = (to-from)/2;
+    int center = (to + from) / 2;
+    int half_length = (to - from) / 2;
 
-    if (half_length == (1 << (THRESHOLD-1)))
-       BFS(A, from, THRESHOLD,pindexPrev);
+    if (half_length == (1 << (THRESHOLD - 1)))
+        BFS(A, from, THRESHOLD, pindexPrev);
     else {
         hybrid_DFS_BFS(A, from, center, pindexPrev);
-        hybrid_DFS_BFS(A, center, to,pindexPrev);
-        for(int i=0; i<half_length; i++)
-            A[center + i] ^= A[from + i];
+        hybrid_DFS_BFS(A, center, to, pindexPrev);
+        for (int i = 0; i < half_length; i++) A[center + i] ^= A[from + i];
     }
 }
 
-void moebius_transform(int n, pck_vector_t F[], solution_callback_t callback, void* callback_state, CBlockIndex* pindexPrev) {
-
+void moebius_transform(int n, pck_vector_t F[], solution_callback_t callback,
+                       void *callback_state, CBlockIndex *pindexPrev) {
     // compute the moebius transform
     hybrid_DFS_BFS(F, 0, (1ll << n), pindexPrev);
 
-    // check for solutions [could/should be integrated into BFS, at least to allow early abort, and to improve cache usage ?]
+    // check for solutions [could/should be integrated into BFS, at least to
+    // allow early abort, and to improve cache usage ?]
     uint64_t size = 1ll << n;
-    for(uint64_t i=0; i<size; i++)
+    for (uint64_t i = 0; i < size; i++)
         if (F[i] == 0)
-            if ((*callback)(callback_state, 1, &i))
-                return;
+            if ((*callback)(callback_state, 1, &i)) return;
 }
 
 void print_vec(__m128i foo) {
     Vec4 bar;
     bar.v = foo;
-    for(int i=0; i<8; i++)
-        printf("%04x ", bar.e[i]);
+    for (int i = 0; i < 8; i++) printf("%04x ", bar.e[i]);
 }
 
 pck_vector_t packed_eval_deg_2(LUT_t LUT, int n, pck_vector_t F[], uint64_t i) {
     // first expand the values of the variables from `i`
     pck_vector_t v[n];
-    for(int k=0; k<n; k++) {
+    for (int k = 0; k < n; k++) {
         v[k] = 0;
         if (i & 0x0001) v[k] = 0xffffffff;
         i = (i >> 1ll);
@@ -128,50 +123,52 @@ pck_vector_t packed_eval_deg_2(LUT_t LUT, int n, pck_vector_t F[], uint64_t i) {
 
     pck_vector_t y = F[0];
 
-    for(int idx_0=0; idx_0<n; idx_0++) {
+    for (int idx_0 = 0; idx_0 < n; idx_0++) {
         const pck_vector_t v_0 = v[idx_0];
 
         // computes the contribution of degree-1 terms
-        y ^= F[ idx_1(LUT, idx_0) ] & v_0;
+        y ^= F[idx_1(LUT, idx_0)] & v_0;
 
-        for(int idx_1=0; idx_1<idx_0; idx_1++) {
+        for (int idx_1 = 0; idx_1 < idx_0; idx_1++) {
             const pck_vector_t v_1 = v_0 & v[idx_1];
 
             // computes the contribution of degree-2 terms
-            y ^= F[ idx_2(LUT, idx_1, idx_0) ] & v_1;
-
-         }
+            y ^= F[idx_2(LUT, idx_1, idx_0)] & v_1;
+        }
     }
 
     return y;
 }
 
-#define STEP_0(i) { \
-    if (unlikely(F[ 0 ] == 0)) { \
-        solution_buffer[n_solutions_found].int_idx = i; \
-        solution_buffer[n_solutions_found].mask = 0x000f; \
-        n_solutions_found++; \
-     }\
-}
+#define STEP_0(i)                                             \
+    {                                                         \
+        if (unlikely(F[0] == 0)) {                            \
+            solution_buffer[n_solutions_found].int_idx = i;   \
+            solution_buffer[n_solutions_found].mask = 0x000f; \
+            n_solutions_found++;                              \
+        }                                                     \
+    }
 
-#define STEP_1(a,i) { \
-    F[ 0 ] ^= F [ a ]; \
-    if (unlikely(F[ 0 ] == 0)) { \
-        solution_buffer[n_solutions_found].int_idx = i; \
-        solution_buffer[n_solutions_found].mask = 0x000f; \
-        n_solutions_found++; \
-     }\
-}
+#define STEP_1(a, i)                                          \
+    {                                                         \
+        F[0] ^= F[a];                                         \
+        if (unlikely(F[0] == 0)) {                            \
+            solution_buffer[n_solutions_found].int_idx = i;   \
+            solution_buffer[n_solutions_found].mask = 0x000f; \
+            n_solutions_found++;                              \
+        }                                                     \
+    }
 
-#define STEP_2(a,b,i) { \
-    F[ a ] ^= F [ b ]; \
-    F[ 0 ] ^= F [ a ]; \
-    if (unlikely(F[ 0 ] == 0)) { \
-        solution_buffer[n_solutions_found].int_idx = i; \
-        solution_buffer[n_solutions_found].mask = 0x000f; \
-        n_solutions_found++; \
-     }\
-}
+#define STEP_2(a, b, i)                                       \
+    {                                                         \
+        F[a] ^= F[b];                                         \
+        F[0] ^= F[a];                                         \
+        if (unlikely(F[0] == 0)) {                            \
+            solution_buffer[n_solutions_found].int_idx = i;   \
+            solution_buffer[n_solutions_found].mask = 0x000f; \
+            n_solutions_found++;                              \
+        }                                                     \
+    }
 
 typedef struct {
     uint64_t int_idx;
@@ -180,29 +177,28 @@ typedef struct {
 
 // generated with L = 9
 void exhaustive_ia32_deg_2(LUT_t LUT, int n, pck_vector_t F[],
-                                       solution_callback_t callback, void* callback_state,
-                                       int verbose, CBlockIndex* pindexPrev) {
-
-    #define QUIT() { \
-        return; \
-    }
+                           solution_callback_t callback, void *callback_state,
+                           int verbose, CBlockIndex *pindexPrev) {
+#define QUIT() \
+    { return; }
 
     uint64_t init_start_time = rdtsc();
     if (pindexPrev != pindexBest) {
         QUIT();
     }
 
-    // computes the derivatives required by the enumeration kernel up to degree 2
-    // this is done in-place, meaning that if "F" described the coefficients of the
-    // polynomials before, then afterwards, they describe the derivatives
+    // computes the derivatives required by the enumeration kernel up to degree
+    // 2 this is done in-place, meaning that if "F" described the coefficients
+    // of the polynomials before, then afterwards, they describe the derivatives
 
     // here, degree-1 terms are affected by degree-2 terms
-    for(int i0=1; i0<n; i0++) {
-        if (i0  != 0 ) F[ idx_1(LUT, i0) ] ^= F[ idx_2(LUT, i0-1, i0) ];
+    for (int i0 = 1; i0 < n; i0++) {
+        if (i0 != 0) F[idx_1(LUT, i0)] ^= F[idx_2(LUT, i0 - 1, i0)];
     }
 
     if (verbose) {
-        printf("fes: initialisation = %15" PRI64u " cycles\n", rdtsc()-init_start_time);
+        printf("fes: initialisation = %15" PRI64u " cycles\n",
+               rdtsc() - init_start_time);
     }
     uint64_t enumeration_start_time = rdtsc();
     uint64_t n_solutions_found = 0;
@@ -210,26 +206,30 @@ void exhaustive_ia32_deg_2(LUT_t LUT, int n, pck_vector_t F[],
     uint64_t pack_of_solution[1024];
     solution_t solution_buffer[516];
 
-    #define FLUSH_SOLUTIONS() { \
-        if ((*callback)(callback_state, current_solution_index, pack_of_solution)) \
-        QUIT(); \
+#define FLUSH_SOLUTIONS()                                       \
+    {                                                           \
+        if ((*callback)(callback_state, current_solution_index, \
+                        pack_of_solution))                      \
+            QUIT();                                             \
     }
 
-    #define PUSH_SOLUTION(current_solution) { \
+#define PUSH_SOLUTION(current_solution)                              \
+    {                                                                \
         pack_of_solution[current_solution_index] = current_solution; \
-        current_solution_index++; \
-        if (current_solution_index == 1024){ \
-            FLUSH_SOLUTIONS(); \
-            current_solution_index = 0; \
-        } \
+        current_solution_index++;                                    \
+        if (current_solution_index == 1024) {                        \
+            FLUSH_SOLUTIONS();                                       \
+            current_solution_index = 0;                              \
+        }                                                            \
     }
 
-    #define CHECK_SOLUTIONS() { \
-        for(uint64_t i=0; i<n_solutions_found; i++){ \
-            if ((solution_buffer[i].mask & 0xffff)) \
+#define CHECK_SOLUTIONS()                                           \
+    {                                                               \
+        for (uint64_t i = 0; i < n_solutions_found; i++) {          \
+            if ((solution_buffer[i].mask & 0xffff))                 \
                 PUSH_SOLUTION(to_gray(solution_buffer[i].int_idx)); \
-        } \
-        n_solutions_found = 0; \
+        }                                                           \
+        n_solutions_found = 0;                                      \
     }
 
     // special case for i=0
@@ -237,55 +237,70 @@ void exhaustive_ia32_deg_2(LUT_t LUT, int n, pck_vector_t F[],
     STEP_0(0);
 
     // from now on, hamming weight is >= 1
-    for(int idx_0=0; idx_0<n    ; idx_0++) {
+    for (int idx_0 = 0; idx_0 < n; idx_0++) {
         if (pindexPrev != pindexBest) {
             QUIT();
         }
         // special case when i has hamming weight exactly 1
         const uint64_t weight_1_start = weight_0_start + (1ll << idx_0);
-        STEP_1( idx_1(LUT, idx_0), weight_1_start );
+        STEP_1(idx_1(LUT, idx_0), weight_1_start);
 
-        // we are now inside the critical part where the hamming weight is known to be >= 2
-        // Thus, there are no special cases from now on
+        // we are now inside the critical part where the hamming weight is known
+        // to be >= 2 Thus, there are no special cases from now on
 
-        // Because of the last step, the current iteration counter is a multiple of 512 plus one
-        // This loop sets it to `rolled_end`, which is a multiple of 512, if possible
+        // Because of the last step, the current iteration counter is a multiple
+        // of 512 plus one This loop sets it to `rolled_end`, which is a
+        // multiple of 512, if possible
 
         const uint64_t rolled_end = weight_1_start + (1ll << min(9, idx_0));
-        for(uint64_t i=1 + weight_1_start; i< rolled_end; i++) {
+        for (uint64_t i = 1 + weight_1_start; i < rolled_end; i++) {
             if (pindexPrev != pindexBest) {
                 QUIT();
             }
             int pos = 0;
             uint64_t _i = i;
-            while ((_i & 0x0001) == 0) { _i >>= 1; pos++; }
+            while ((_i & 0x0001) == 0) {
+                _i >>= 1;
+                pos++;
+            }
             const int k_1 = pos;
-            _i >>= 1; pos++;
-            while ((_i & 0x0001) == 0) { _i >>= 1; pos++; }
+            _i >>= 1;
+            pos++;
+            while ((_i & 0x0001) == 0) {
+                _i >>= 1;
+                pos++;
+            }
             const int k_2 = pos;
-            STEP_2( idx_1(LUT, k_1), idx_2(LUT, k_1, k_2), i );
+            STEP_2(idx_1(LUT, k_1), idx_2(LUT, k_1, k_2), i);
         }
 
         CHECK_SOLUTIONS();
 
-        // Here, the number of iterations to perform is (supposedly) sufficiently large
-        // We will therefore unroll the loop 512 times
+        // Here, the number of iterations to perform is (supposedly)
+        // sufficiently large We will therefore unroll the loop 512 times
 
         // unrolled critical section where the hamming weight is >= 2
-        for(uint64_t j=512; j<(1ull << idx_0); j+=512) {
+        for (uint64_t j = 512; j < (1ull << idx_0); j += 512) {
             if (pindexPrev != pindexBest) {
                 QUIT();
             }
             const uint64_t i = j + weight_1_start;
             int pos = 0;
             uint64_t _i = i;
-            while ((_i & 0x0001) == 0) { _i >>= 1; pos++; }
+            while ((_i & 0x0001) == 0) {
+                _i >>= 1;
+                pos++;
+            }
             const int k_1 = pos;
-            _i >>= 1; pos++;
-            while ((_i & 0x0001) == 0) { _i >>= 1; pos++; }
+            _i >>= 1;
+            pos++;
+            while ((_i & 0x0001) == 0) {
+                _i >>= 1;
+                pos++;
+            }
             const int k_2 = pos;
             const int alpha = LUT[0][k_1];
-            const int beta = LUT[1][k_1]+LUT[0][k_2];
+            const int beta = LUT[1][k_1] + LUT[0][k_2];
             STEP_2(0 + alpha, 0 + beta, i + 0);
             STEP_2(1, 1 + alpha, i + 1);
             STEP_2(2, 2 + alpha, i + 2);
@@ -801,25 +816,22 @@ void exhaustive_ia32_deg_2(LUT_t LUT, int n, pck_vector_t F[],
 
             CHECK_SOLUTIONS();
         }
-
-
     }
     FLUSH_SOLUTIONS();
     uint64_t end_time = rdtsc();
     if (verbose) {
-        printf("fes: enumeration+check = %" PRI64u " cycles\n", end_time - enumeration_start_time);
+        printf("fes: enumeration+check = %" PRI64u " cycles\n",
+               end_time - enumeration_start_time);
     }
     QUIT();
 }
 
-
 uint64_t timeSecondStep = 0;
 
-
-void verbose_print(wrapper_settings_t *settings, const char* fmt, ...) {
+void verbose_print(wrapper_settings_t *settings, const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    if ( settings->verbose ) {
+    if (settings->verbose) {
         fprintf(stderr, "fes: ");
         vfprintf(stderr, fmt, args);
         fprintf(stderr, "\n");
@@ -843,81 +855,89 @@ void init_settings(wrapper_settings_t *result) {
     result->verbose = 0;
 }
 
-void choose_settings( wrapper_settings_t *s, int n, int n_eqs, int degree) {
+void choose_settings(wrapper_settings_t *s, int n, int n_eqs, int degree) {
     // choose algorithm
     assert(n_eqs > 0);
-    if ( s->algorithm == ALGO_AUTO ) {
+    if (s->algorithm == ALGO_AUTO) {
         if (degree < s->algo_auto_degree_bound) {
-        verbose_print(s, "low degree (%d) --> using enumeration code [threshold=%d]", degree, s->algo_auto_degree_bound);
-        s->algorithm = ALGO_ENUMERATION;
+            verbose_print(
+                s, "low degree (%d) --> using enumeration code [threshold=%d]",
+                degree, s->algo_auto_degree_bound);
+            s->algorithm = ALGO_ENUMERATION;
         } else {
             verbose_print(s, "''large'' degree (%d) --> using FFT evaluation");
             s->algorithm = ALGO_FFT;
         }
 
-        if( s->algorithm == ALGO_ENUMERATION && s->algo_enum_self_tune ) {
-            if ( degree == 2 ) {
+        if (s->algorithm == ALGO_ENUMERATION && s->algo_enum_self_tune) {
+            if (degree == 2) {
                 verbose_print(s, "very small degree, using 16-bit words");
                 s->word_size = 16;
             }
-            if ( n < SIMD_CHUNK_SIZE + 2 ) {
-                verbose_print(s, "too few variables (%d), disabling sse assembly code [threshold=%d]", n, SIMD_CHUNK_SIZE + 2);
+            if (n < SIMD_CHUNK_SIZE + 2) {
+                verbose_print(s,
+                              "too few variables (%d), disabling sse assembly "
+                              "code [threshold=%d]",
+                              n, SIMD_CHUNK_SIZE + 2);
                 s->algo_enum_use_sse = 0;
             } else {
-                verbose_print(s, "Using SIMD code (sse2 instructions available)");
+                verbose_print(s,
+                              "Using SIMD code (sse2 instructions available)");
             }
         }
     }
 }
-
 
 // ---------- convert the input given by the SAGE interface to the right format
 void next_set(int n, int d, int set[]) {
     if (d == 0) return;
     set[0] += 1;
     if (set[0] == n) {
-        next_set(n-1, d-1, &set[1]);
+        next_set(n - 1, d - 1, &set[1]);
         if (d > 0) set[0] = set[1] + 1;
     }
 }
 
 //  assumes that F (the target array) is already allocated
-void convert_input_equations(const int n, const int degree, int from, int to, int ***coeffs, idx_lut_t *idx_LUT, pck_vector_t F[]) {
+void convert_input_equations(const int n, const int degree, int from, int to,
+                             int ***coeffs, idx_lut_t *idx_LUT,
+                             pck_vector_t F[]) {
+    assert(to - from <= (int)(8 * sizeof(pck_vector_t)));
+    vector_t x = init_vector(
+        to - from);  // this is used to pack the equations in memory words
 
-    assert(to-from <= (int) (8*sizeof(pck_vector_t)));
-    vector_t x = init_vector(to-from);   // this is used to pack the equations in memory words
-
-    int set[ n ]; // represent the monomial `m` enumerated below
-    for(int j=0; j<n; j++) {
+    int set[n];  // represent the monomial `m` enumerated below
+    for (int j = 0; j < n; j++) {
         set[j] = -1;
     }
-    for(int d=0; d<degree+1; d++) {   // collect degree-d terms
-        for(int j=0; j<d; j++) {
-            set[j] = d-1-j;
+    for (int d = 0; d < degree + 1; d++) {  // collect degree-d terms
+        for (int j = 0; j < d; j++) {
+            set[j] = d - 1 - j;
         }
-        for(uint64_t m=0; m<binomials[n][d]; m++) { // iterates over all monomials of degree d
-        // loop invariant: `set` describes the m-th monomial
+        for (uint64_t m = 0; m < binomials[n][d];
+             m++) {  // iterates over all monomials of degree d
+                     // loop invariant: `set` describes the m-th monomial
 
-            for(int e=from; e<to; e++) { // skim through all the equations
-                x[e-from] = coeffs[e][d][m];
+            for (int e = from; e < to; e++) {  // skim through all the equations
+                x[e - from] = coeffs[e][d][m];
             }
-            F[set2int( idx_LUT, set) ] = pack(to-from, x);
+            F[set2int(idx_LUT, set)] = pack(to - from, x);
 
-            next_set(n, n, &set[0]); // maintain invariant
+            next_set(n, n, &set[0]);  // maintain invariant
         }
     }
     free(x);
 }
 
-
 // --------------------------------------------------------------------------------------------------
 
 // this callback is used when there are more than 32 equations
-int solution_tester(void *_state, uint64_t size, uint64_t* n_solutions) {
-    wrapper_state_t * state = (wrapper_state_t *) _state;
+int solution_tester(void *_state, uint64_t size, uint64_t *n_solutions) {
+    wrapper_state_t *state = (wrapper_state_t *)_state;
     uint64_t start = rdtsc();
 
-    assert( state->degree < enumerated_degree_bound); // enumerated_degree_bound is defined in fes.h
+    assert(state->degree < enumerated_degree_bound);  // enumerated_degree_bound
+                                                      // is defined in fes.h
 
     uint64_t corrects_solutions[1];
     uint64_t current_solution;
@@ -925,16 +945,17 @@ int solution_tester(void *_state, uint64_t size, uint64_t* n_solutions) {
     int is_correct;
     int j;
 
-    for(uint64_t i=0; i<size; i++){
+    for (uint64_t i = 0; i < size; i++) {
         is_correct = 1;
         j = 0;
         current_solution = n_solutions[i];
-        while(is_correct && j<(state->n_batches)){
-            if (packed_eval(state->testing_LUT->LUT, state->n, state->degree, state->G[j], current_solution) != 0)
+        while (is_correct && j < (state->n_batches)) {
+            if (packed_eval(state->testing_LUT->LUT, state->n, state->degree,
+                            state->G[j], current_solution) != 0)
                 is_correct = 0;
             j++;
         }
-        if (is_correct){
+        if (is_correct) {
             corrects_solutions[0] = current_solution;
             index_correct_solution++;
             break;
@@ -945,70 +966,74 @@ int solution_tester(void *_state, uint64_t size, uint64_t* n_solutions) {
     int answer_found = 0;
 
     if (index_correct_solution) {
-        // report solution to the actual callback, and ask whether it wants to keep going
-        answer_found = (*(state->callback))(state->callback_state, index_correct_solution, corrects_solutions);
+        // report solution to the actual callback, and ask whether it wants to
+        // keep going
+        answer_found = (*(state->callback))(
+            state->callback_state, index_correct_solution, corrects_solutions);
     }
 
-
     return answer_found;
-
 }
 
 // --------------------------------------------------------------------------------------
 void moebius_wrapper(int n, pck_vector_t F[], solution_callback_t callback,
-                              void* callback_state, wrapper_settings_t *settings, CBlockIndex* pindexPrev) {
+                     void *callback_state, wrapper_settings_t *settings,
+                     CBlockIndex *pindexPrev) {
     verbose_print(settings, "running FFT");
     moebius_transform(n, F, callback, callback_state, pindexPrev);
 }
 
-
 // ------------------------------------------------
-void enumeration_wrapper(LUT_t LUT, int n, int d,
-                                    pck_vector_t F[], solution_callback_t callback,
-                                    void* callback_state, wrapper_settings_t *settings,
-                                    CBlockIndex* pindexPrev) {
-
-    // TODO : this should probably also include a run-time check that SSE2 instructions are actually there
+void enumeration_wrapper(LUT_t LUT, int n, int d, pck_vector_t F[],
+                         solution_callback_t callback, void *callback_state,
+                         wrapper_settings_t *settings,
+                         CBlockIndex *pindexPrev) {
+    // TODO : this should probably also include a run-time check that SSE2
+    // instructions are actually there
     if (pindexPrev != pindexBest) {
         return;
     }
-    //if ( !settings->algo_enum_use_sse ) {
+    // if ( !settings->algo_enum_use_sse ) {
     if (1) {
         switch (d) {
-            case 2: exhaustive_ia32_deg_2(LUT, n, F, callback, callback_state, settings->verbose, pindexPrev); break;
+            case 2:
+                exhaustive_ia32_deg_2(LUT, n, F, callback, callback_state,
+                                      settings->verbose, pindexPrev);
+                break;
             default:
-            assert(0);
+                assert(0);
         }
     } else {
-        if ( settings->word_size == 32 ) {
+        if (settings->word_size == 32) {
             switch (d) {
-                //case 2: exhaustive_sse2_deg_2_T_2_el_0(LUT, n, F, callback, callback_state, settings->verbose); break;
+                // case 2: exhaustive_sse2_deg_2_T_2_el_0(LUT, n, F, callback,
+                // callback_state, settings->verbose); break;
                 default:
-                assert(0);
+                    assert(0);
             }
-        } else if ( settings->word_size == 16 ){
+        } else if (settings->word_size == 16) {
             switch (d) {
-                //case 2: exhaustive_sse2_deg_2_T_3_el_0(LUT, n, F, callback, callback_state, settings->verbose); break;
+                // case 2: exhaustive_sse2_deg_2_T_3_el_0(LUT, n, F, callback,
+                // callback_state, settings->verbose); break;
                 default:
-                assert(0);
+                    assert(0);
             }
-        } else if ( settings->word_size == 8 ){
+        } else if (settings->word_size == 8) {
             switch (d) {
-                //case 2: exhaustive_sse2_deg_2_T_4_el_0(LUT, n, F, callback, callback_state, settings->verbose); break;
+                // case 2: exhaustive_sse2_deg_2_T_4_el_0(LUT, n, F, callback,
+                // callback_state, settings->verbose); break;
                 default:
-                assert(0);
+                    assert(0);
             }
         }
     }
 }
 
-
 // -------------------------------------
 
 int exhaustive_search_wrapper(const int n, int n_eqs, const int degree,
-                                             int ***coeffs, solution_callback_t callback,
-                                             void* callback_state,  CBlockIndex* pindexPrev) {
-
+                              int ***coeffs, solution_callback_t callback,
+                              void *callback_state, CBlockIndex *pindexPrev) {
     wrapper_settings_t settings[1];
     init_settings(settings);
     choose_settings(settings, n, n_eqs, degree);
@@ -1016,17 +1041,17 @@ int exhaustive_search_wrapper(const int n, int n_eqs, const int degree,
         return -5;
     }
 
-    //bool must_free_tester_state = false;
+    // bool must_free_tester_state = false;
     const uint64_t N = n_monomials(n, degree);
     //  int enumerated_equations = 128 >> (T);
 
     // --------- allocate/initialize some of our data structures
     pck_vector_t *F = NULL;
-    idx_lut_t* idx_LUT = NULL;
+    idx_lut_t *idx_LUT = NULL;
     size_t F_size = -1;
 
     bool should_free_LUT = 0;
-    switch( settings->algorithm ) {
+    switch (settings->algorithm) {
         case ALGO_ENUMERATION:
             idx_LUT = init_deginvlex_LUT(n, degree);
             if (idx_LUT == NULL) {
@@ -1043,131 +1068,127 @@ int exhaustive_search_wrapper(const int n, int n_eqs, const int degree,
     bool should_free_F = 0;
     F = (pck_vector_t *)malloc(F_size * sizeof(pck_vector_t));
     if (F == NULL) {
-        if (should_free_LUT && idx_LUT)
-            free_LUT(idx_LUT);
+        if (should_free_LUT && idx_LUT) free_LUT(idx_LUT);
         return -4;
     }
     should_free_F = 1;
 
-    // ---------- deal where the case where there is more equations than what the kernel(s) deals with
+    // ---------- deal where the case where there is more equations than what
+    // the kernel(s) deals with
 
     pck_vector_t **G = NULL;
 
-    wrapper_state_t * tester_state = NULL;
+    wrapper_state_t *tester_state = NULL;
 
     // if there are more equations that what we can enumerate simultaneously,
     // we just deal with the first `enumerated_equations`, and then check
     // any eventual solutions of these against the remaining equations
 
-    verbose_print(settings, "wordsize (=%d) < #equations (=%d) --> wrapping tester around core fixed-size algorithm directly", settings->word_size, n_eqs );
+    verbose_print(settings,
+                  "wordsize (=%d) < #equations (=%d) --> wrapping tester "
+                  "around core fixed-size algorithm directly",
+                  settings->word_size, n_eqs);
 
     // we split the equations into "batches" of `settings->word_size` each
     int n_batches = n_eqs / settings->word_size;
-    if ( (n_eqs % settings->word_size) > 0 ) {
+    if ((n_eqs % settings->word_size) > 0) {
         n_batches++;
     }
 
     // the first batch goes into the enumeration code
     // prepare the input for the enumeration
-    convert_input_equations(n, degree, 0, settings->word_size, coeffs, idx_LUT, F) ;
+    convert_input_equations(n, degree, 0, settings->word_size, coeffs, idx_LUT,
+                            F);
 
-
-    // the next batches will be used by the tester. They must be in deginvlex order
+    // the next batches will be used by the tester. They must be in deginvlex
+    // order
     idx_lut_t *testing_LUT = idx_LUT;
 
     bool should_free_G = 0;
-    G = (pck_vector_t**)calloc(n_batches-1, sizeof(pck_vector_t *));
+    G = (pck_vector_t **)calloc(n_batches - 1, sizeof(pck_vector_t *));
     if (G == NULL) {
-        if (should_free_F && F)
-            free(F);
-        if (should_free_LUT && idx_LUT)
-            free_LUT(idx_LUT);
+        if (should_free_F && F) free(F);
+        if (should_free_LUT && idx_LUT) free_LUT(idx_LUT);
         return -4;
     }
     should_free_G = 1;
 
     int should_free_G_count = -1;
-    for(int i=1; i<n_batches; i++) {
-        G[i-1] = (pck_vector_t*)calloc(N, sizeof(pck_vector_t));
-        if (G[i-1] == NULL) {
-            should_free_G_count = i-1;
+    for (int i = 1; i < n_batches; i++) {
+        G[i - 1] = (pck_vector_t *)calloc(N, sizeof(pck_vector_t));
+        if (G[i - 1] == NULL) {
+            should_free_G_count = i - 1;
             break;
         }
-        convert_input_equations(n, degree, settings->word_size*i, min(n_eqs, settings->word_size*(i+1)), coeffs, testing_LUT, G[i-1]);
+        convert_input_equations(n, degree, settings->word_size * i,
+                                min(n_eqs, settings->word_size * (i + 1)),
+                                coeffs, testing_LUT, G[i - 1]);
     }
     should_free_G_count -= 1;
     while (should_free_G_count >= 0 && G[should_free_G_count]) {
-        free(G[should_free_G_count] );
+        free(G[should_free_G_count]);
         should_free_G_count -= 1;
     }
     if (should_free_G_count == -1) {
-        if (should_free_G && G)
-            free(G);
-        if (should_free_F && F)
-            free(F);
-        if (should_free_LUT && idx_LUT)
-            free_LUT(idx_LUT);
+        if (should_free_G && G) free(G);
+        if (should_free_F && F) free(F);
+        if (should_free_LUT && idx_LUT) free_LUT(idx_LUT);
         return -4;
     }
 
-
     // the "tester" needs some internal state
     bool should_free_tester_state = 0;
-    if ( ( tester_state = (wrapper_state_t*)malloc( sizeof(wrapper_state_t) ) ) == NULL) {
+    if ((tester_state = (wrapper_state_t *)malloc(sizeof(wrapper_state_t))) ==
+        NULL) {
         if (should_free_G && G) {
-            for(int i=n_batches-1; i>=1; i--) {
-                free(G[i-1]);
+            for (int i = n_batches - 1; i >= 1; i--) {
+                free(G[i - 1]);
             }
             free(G);
         }
-        if (should_free_F && F )
-            free(F);
-        if (should_free_LUT && idx_LUT)
-            free_LUT(idx_LUT);
+        if (should_free_F && F) free(F);
+        if (should_free_LUT && idx_LUT) free_LUT(idx_LUT);
         return -4;
     }
     should_free_tester_state = 1;
 
     tester_state->n = n;
     tester_state->degree = degree;
-    tester_state->n_batches = n_batches-1;
+    tester_state->n_batches = n_batches - 1;
     tester_state->G = G;
     tester_state->testing_LUT = testing_LUT;
 
     tester_state->callback = callback;
     tester_state->callback_state = callback_state;
-    //must_free_tester_state = true;
+    // must_free_tester_state = true;
 
     callback = solution_tester;
-    callback_state = (void *) tester_state;
+    callback_state = (void *)tester_state;
 
     // ------------ start actual computation
     verbose_print(settings, "starting kernel");
     uint64_t start = rdtsc();
 
-    enumeration_wrapper(idx_LUT->LUT, n, degree, F, callback, callback_state, settings, pindexPrev);
+    enumeration_wrapper(idx_LUT->LUT, n, degree, F, callback, callback_state,
+                        settings, pindexPrev);
 
     uint64_t totalTime = rdtsc() - start;
-    verbose_print(settings, "%.2f CPU cycles/candidate solution", totalTime * 1.0 / (1ll << n));
+    verbose_print(settings, "%.2f CPU cycles/candidate solution",
+                  totalTime * 1.0 / (1ll << n));
 
     // ----------- clean up
 
-    if (should_free_tester_state && tester_state)
-        free(tester_state);
+    if (should_free_tester_state && tester_state) free(tester_state);
     if (should_free_G && G) {
-        for(int i=n_batches-1; i>=1; i--) {
-            if (G[i-1])
-                free(G[i-1]);
+        for (int i = n_batches - 1; i >= 1; i--) {
+            if (G[i - 1]) free(G[i - 1]);
         }
         free(G);
     }
-    if (should_free_F && F)
-        free(F);
-    if (should_free_LUT && idx_LUT)
-        free_LUT(idx_LUT);
+    if (should_free_F && F) free(F);
+    if (should_free_LUT && idx_LUT) free_LUT(idx_LUT);
 
     return 0;
-
 }
 
 struct exfes_context {
@@ -1198,36 +1219,37 @@ int M(uint64_t *Mask, int index) {
         return (Mask[1] >> (index - 64)) & 1;
 }
 
+int Merge_Solution(void *_ctx_ptr, uint64_t count, uint64_t *Sol) {
+    struct exfes_context *p = (struct exfes_context *)_ctx_ptr;
 
-int Merge_Solution (void *_ctx_ptr, uint64_t count, uint64_t *Sol) {
-    struct exfes_context *p = (struct exfes_context*) _ctx_ptr;
+    int const mcopy = p->mcopy;
+    int const ncopy = p->ncopy;
+    uint64_t const solm = p->solm;
+    uint64_t **const SolMerge = p->SolMerge;
+    uint64_t const SolCount = p->SolCount;  // XXX value is 1
+    //  uint64_t    const MaxSolCount = p -> MaxSolCount ; // XXX value is 1
+    uint64_t *const MaskCopy = p->MaskCopy;
 
-    int     const mcopy       = p -> mcopy   ;
-    int     const ncopy       = p -> ncopy   ;
-    uint64_t    const solm        = p -> solm    ;
-    uint64_t ** const SolMerge    = p -> SolMerge    ;
-    uint64_t    const SolCount    = p -> SolCount    ; // XXX value is 1
-//  uint64_t    const MaxSolCount = p -> MaxSolCount ; // XXX value is 1
-    uint64_t  * const MaskCopy    = p -> MaskCopy    ;
-
-    SolMerge[SolCount][0] = (Sol[count-1] << mcopy) ^ solm;
+    SolMerge[SolCount][0] = (Sol[count - 1] << mcopy) ^ solm;
 
     if (mcopy > 0) {
-        SolMerge[SolCount][1] = Sol[count-1] >> (64 - mcopy);
+        SolMerge[SolCount][1] = Sol[count - 1] >> (64 - mcopy);
     }
 
     if (ncopy < 64) {
         SolMerge[SolCount][0] ^= (MaskCopy[0] << (64 - ncopy)) >> (64 - ncopy);
     } else {
         SolMerge[SolCount][0] ^= MaskCopy[0];
-        SolMerge[SolCount][1] ^= (MaskCopy[1] << (128 - ncopy)) >> (128 - ncopy);
+        SolMerge[SolCount][1] ^=
+            (MaskCopy[1] << (128 - ncopy)) >> (128 - ncopy);
     }
-    p -> SolCount = 1;
+    p->SolCount = 1;
 
     return 1;
 }
 
-void exfes(int m, int n, int e, uint64_t *Mask, uint64_t maxsol, int ***Eqs, uint64_t **SolArray,CBlockIndex* pindexPrev) {
+void exfes(int m, int n, int e, uint64_t *Mask, uint64_t maxsol, int ***Eqs,
+           uint64_t **SolArray, CBlockIndex *pindexPrev) {
     struct exfes_context exfes_ctx;
     exfes_ctx.mcopy = m;
     exfes_ctx.ncopy = n;
@@ -1238,12 +1260,11 @@ void exfes(int m, int n, int e, uint64_t *Mask, uint64_t maxsol, int ***Eqs, uin
     exfes_ctx.MaskCopy = Mask;
 
     // Mask Eqs for a random start point.
-    for (int i=0; i<e; i++) {
-        for (int j=0; j<n; j++)
-            Eqs[i][0][0] ^= Eqs[i][1][j] & M(Mask, j);
+    for (int i = 0; i < e; i++) {
+        for (int j = 0; j < n; j++) Eqs[i][0][0] ^= Eqs[i][1][j] & M(Mask, j);
         int offset = 0;
-        for (int j=0; j<n-1; j++)
-            for (int k=j+1; k<n; k++) {
+        for (int j = 0; j < n - 1; j++)
+            for (int k = j + 1; k < n; k++) {
                 Eqs[i][0][0] ^= Eqs[i][2][offset] & M(Mask, j) & M(Mask, k);
                 Eqs[i][1][j] ^= Eqs[i][2][offset] & M(Mask, k);
                 Eqs[i][1][k] ^= Eqs[i][2][offset] & M(Mask, j);
@@ -1251,57 +1272,54 @@ void exfes(int m, int n, int e, uint64_t *Mask, uint64_t maxsol, int ***Eqs, uin
             }
     }
     // Make a copy of Eqs for evaluating fixed variables.
-    int *** EqsCopy = CreateEquations(n, e);
+    int ***EqsCopy = CreateEquations(n, e);
 
     // Partition problem into (1<<n_fixed) sub_problems.
     int p = n - m;
     int npartial;
     int fixvalue;
-    for (exfes_ctx.solm=0; exfes_ctx.solm<(uint64_t)1<<m; exfes_ctx.solm++) {
-        if (pindexPrev != pindexBest)
-            break;
+    for (exfes_ctx.solm = 0; exfes_ctx.solm < (uint64_t)1 << m;
+         exfes_ctx.solm++) {
+        if (pindexPrev != pindexBest) break;
         // Initialize npartial and EqsCopy.
         npartial = n;
-        for (int i=0; i<e; i++)
-            for (int j=0; j<3; j++)
-                for (int k=0; k<C(n, j); k++)
+        for (int i = 0; i < e; i++)
+            for (int j = 0; j < 3; j++)
+                for (int k = 0; k < C(n, j); k++)
                     EqsCopy[i][j][k] = Eqs[i][j][k];
         // Fix m variables.
         while (npartial != p) {
             fixvalue = (exfes_ctx.solm >> (n - npartial)) & 1;
-            for (int i=0; i<e; i++) {
+            for (int i = 0; i < e; i++) {
                 // Fix a variable.
-                for (int j=0; j<npartial-1; j++)
-                    EqsCopy[i][1][j+1] ^= EqsCopy[i][2][j] & fixvalue;
+                for (int j = 0; j < npartial - 1; j++)
+                    EqsCopy[i][1][j + 1] ^= EqsCopy[i][2][j] & fixvalue;
                 EqsCopy[i][0][0] ^= EqsCopy[i][1][0] & fixvalue;
                 // Shrink EqsCopy.
-                for (int j=0; j<npartial-1; j++)
-                    EqsCopy[i][1][j] = EqsCopy[i][1][j+1];
-                for (int j=0; j<C(npartial-1, 2); j++)
-                    EqsCopy[i][2][j] = EqsCopy[i][2][j+npartial-1];
+                for (int j = 0; j < npartial - 1; j++)
+                    EqsCopy[i][1][j] = EqsCopy[i][1][j + 1];
+                for (int j = 0; j < C(npartial - 1, 2); j++)
+                    EqsCopy[i][2][j] = EqsCopy[i][2][j + npartial - 1];
             }
             npartial -= 1;
         }
 
-        if (exhaustive_search_wrapper(npartial, e, 2, EqsCopy, Merge_Solution, &exfes_ctx,  pindexPrev) != 0) {
+        if (exhaustive_search_wrapper(npartial, e, 2, EqsCopy, Merge_Solution,
+                                      &exfes_ctx, pindexPrev) != 0) {
             break;
         }
 
         // Determine to early aborb or not.
-        if (exfes_ctx.SolCount == 1)
-            break;
+        if (exfes_ctx.SolCount == 1) break;
     }
 
     FreeEquations(e, EqsCopy);
-
 }
-
-
 
 uint64 nLastBlockTx = 0;
 uint64 nLastBlockSize = 0;
-static const int64 nNewTargetTimespan = 84 * 60 * 60; // 3.5 days
-static const int64 nTargetTimespan = 14 * 24 * 60 * 60; // two weeks
+static const int64 nNewTargetTimespan = 84 * 60 * 60;    // 3.5 days
+static const int64 nTargetTimespan = 14 * 24 * 60 * 60;  // two weeks
 static const int64 nTargetSpacing = 10 * 60;
 static const int64 nInterval = nTargetTimespan / nTargetSpacing;
 static const int64 nNewInterval = nNewTargetTimespan / nTargetSpacing;
@@ -1309,166 +1327,173 @@ static const int64 nNewInterval = nNewTargetTimespan / nTargetSpacing;
 static unsigned int bnPowUpLimit = 256;
 static unsigned int bnPowLowLimit = 41;
 
-const int64 blockValue[45] = {250000000,5,10,20,40,40,40,40,40,40,40,160,160,160,160,160,160,640,640,1280,1280,2563,2560,1884,1386,1020,751,552,406,299,220,162,119,87,64,47,35,25,18,13,10,7,5,4,184230000000};
+const int64 blockValue[45] = {
+    250000000, 5,    10,   20,   40,   40,   40,   40,   40,
+    40,        40,   160,  160,  160,  160,  160,  160,  640,
+    640,       1280, 1280, 2563, 2560, 1884, 1386, 1020, 751,
+    552,       406,  299,  220,  162,  119,  87,   64,   47,
+    35,        25,   18,   13,   10,   7,    5,    4,    184230000000};
 
 int64 GetBlockValue(int nHeight, int64 nFees) {
     int64 nSubsidy = 0;
-	
-	/** the first year **/
-	
-	//the first 30 days
-	if (0 < nHeight && nHeight <= 30*144) {
+
+    /** the first year **/
+
+    // the first 30 days
+    if (0 < nHeight && nHeight <= 30 * 144) {
         nSubsidy = (blockValue[0]);
-		return nSubsidy + nFees ;
-	} 
+        return nSubsidy + nFees;
+    }
 
-	// next 31 days
-	if (30*144 < nHeight && nHeight <= 61*144) {
+    // next 31 days
+    if (30 * 144 < nHeight && nHeight <= 61 * 144) {
         nSubsidy = blockValue[1] * COIN;
-	    return nSubsidy + nFees ;
-	}
+        return nSubsidy + nFees;
+    }
 
-	// next 30 days
-	if (61*144 < nHeight && nHeight <= 91*144) {
+    // next 30 days
+    if (61 * 144 < nHeight && nHeight <= 91 * 144) {
         nSubsidy = blockValue[2] * COIN;
-	    return nSubsidy + nFees ;
-	}
+        return nSubsidy + nFees;
+    }
 
-	// next 31 days
-	if (91*144 < nHeight && nHeight <= 122*144) {
+    // next 31 days
+    if (91 * 144 < nHeight && nHeight <= 122 * 144) {
         nSubsidy = blockValue[3] * COIN;
-	    return nSubsidy + nFees ;
-	}
+        return nSubsidy + nFees;
+    }
 
-	// next 30 days
-	if (122*144 < nHeight && nHeight <= 152*144) {
+    // next 30 days
+    if (122 * 144 < nHeight && nHeight <= 152 * 144) {
         nSubsidy = blockValue[4] * COIN;
-		    return nSubsidy + nFees ;
-	}
+        return nSubsidy + nFees;
+    }
 
-	// next 31 days
-	if (152*144 < nHeight && nHeight <= 183*144) {
+    // next 31 days
+    if (152 * 144 < nHeight && nHeight <= 183 * 144) {
         nSubsidy = blockValue[5] * COIN;
-		    return nSubsidy + nFees ;
-	}
+        return nSubsidy + nFees;
+    }
 
-	// next 31 days
-	if (183*144 < nHeight && nHeight <= 214*144) {
+    // next 31 days
+    if (183 * 144 < nHeight && nHeight <= 214 * 144) {
         nSubsidy = blockValue[6] * COIN;
-		    return nSubsidy + nFees ;
-	}
+        return nSubsidy + nFees;
+    }
 
-	// next 30 days
-	if (214*144 < nHeight && nHeight <= 244*144) {
+    // next 30 days
+    if (214 * 144 < nHeight && nHeight <= 244 * 144) {
         nSubsidy = blockValue[7] * COIN;
-		    return nSubsidy + nFees ;
-	}
+        return nSubsidy + nFees;
+    }
 
-	// next 30 days
-	if (244*144 < nHeight && nHeight <= 274*144) {
+    // next 30 days
+    if (244 * 144 < nHeight && nHeight <= 274 * 144) {
         nSubsidy = blockValue[8] * COIN;
-		    return nSubsidy + nFees ;
-	}
+        return nSubsidy + nFees;
+    }
 
-	// next 30 days
-	if (274*144 < nHeight && nHeight <= 304*144) {
+    // next 30 days
+    if (274 * 144 < nHeight && nHeight <= 304 * 144) {
         nSubsidy = blockValue[9] * COIN;
-		    return nSubsidy + nFees ;
-	}
+        return nSubsidy + nFees;
+    }
 
-	// next 30 days
-	if (304*144 < nHeight && nHeight <= 334*144) {
+    // next 30 days
+    if (304 * 144 < nHeight && nHeight <= 334 * 144) {
         nSubsidy = blockValue[10] * COIN;
-		    return nSubsidy + nFees ;
-	}
+        return nSubsidy + nFees;
+    }
 
-	// next 31 days
-    if (334*144 < nHeight && nHeight <= 365*144) {
+    // next 31 days
+    if (334 * 144 < nHeight && nHeight <= 365 * 144) {
         nSubsidy = blockValue[11] * COIN;
-		    return nSubsidy + nFees ;
-	}
+        return nSubsidy + nFees;
+    }
 
-	// next 31 days
-    if (365*144 < nHeight && nHeight <= 396*144) {
+    // next 31 days
+    if (365 * 144 < nHeight && nHeight <= 396 * 144) {
         nSubsidy = blockValue[12] * COIN;
-		    return nSubsidy + nFees ;
-	}
+        return nSubsidy + nFees;
+    }
 
-	// next 30 days
-    if (396*144 < nHeight && nHeight <= 426*144) {
+    // next 30 days
+    if (396 * 144 < nHeight && nHeight <= 426 * 144) {
         nSubsidy = blockValue[13] * COIN;
-		    return nSubsidy + nFees ;
-	}
+        return nSubsidy + nFees;
+    }
 
-	// next 30 days
-    if (426*144 < nHeight && nHeight <= 456*144) {
+    // next 30 days
+    if (426 * 144 < nHeight && nHeight <= 456 * 144) {
         nSubsidy = blockValue[14] * COIN;
-		    return nSubsidy + nFees ;
-	}
+        return nSubsidy + nFees;
+    }
 
-	// next 30 days
-    if (456*144 < nHeight && nHeight <= 486*144) {
+    // next 30 days
+    if (456 * 144 < nHeight && nHeight <= 486 * 144) {
         nSubsidy = blockValue[15] * COIN;
-		    return nSubsidy + nFees ;
-	}
+        return nSubsidy + nFees;
+    }
 
-	// next 30 days
-    if (486*144 < nHeight && nHeight <= 516*144) {
+    // next 30 days
+    if (486 * 144 < nHeight && nHeight <= 516 * 144) {
         nSubsidy = blockValue[16] * COIN;
-		    return nSubsidy + nFees ;
-	}
+        return nSubsidy + nFees;
+    }
 
-	// next 31 days
-    if (516*144 < nHeight && nHeight <= 547*144) {
+    // next 31 days
+    if (516 * 144 < nHeight && nHeight <= 547 * 144) {
         nSubsidy = blockValue[17] * COIN;
-		    return nSubsidy + nFees ;
-	}
+        return nSubsidy + nFees;
+    }
 
-	// next 31 days
-    if (547*144 < nHeight && nHeight <= 578*144) {
+    // next 31 days
+    if (547 * 144 < nHeight && nHeight <= 578 * 144) {
         nSubsidy = blockValue[18] * COIN;
-		    return nSubsidy + nFees ;
-	}
+        return nSubsidy + nFees;
+    }
 
-	// next 30 days
-    if (578*144 < nHeight && nHeight <= 608*144) {
+    // next 30 days
+    if (578 * 144 < nHeight && nHeight <= 608 * 144) {
         nSubsidy = blockValue[19] * COIN;
-		    return nSubsidy + nFees ;
-	}
+        return nSubsidy + nFees;
+    }
 
-	// next 30 days
-    if (608*144 < nHeight && nHeight <= 638*144) {
+    // next 30 days
+    if (608 * 144 < nHeight && nHeight <= 638 * 144) {
         nSubsidy = blockValue[20] * COIN;
-		    return nSubsidy + nFees ;
-	}
+        return nSubsidy + nFees;
+    }
 
-
-	// next 30 days
-    if (638*144 < nHeight && nHeight <= 668*144) {
+    // next 30 days
+    if (638 * 144 < nHeight && nHeight <= 668 * 144) {
         nSubsidy = blockValue[21] * COIN;
-		    return nSubsidy + nFees ;
-	}
+        return nSubsidy + nFees;
+    }
 
-	// next 3 * 365 days
-    if (365*144 + 303*144 < nHeight && nHeight <= 4 * 365 * 144 + 303*144) {
+    // next 3 * 365 days
+    if (365 * 144 + 303 * 144 < nHeight &&
+        nHeight <= 4 * 365 * 144 + 303 * 144) {
         nSubsidy = blockValue[22] * COIN;
-		    return nSubsidy + nFees ;
-	}
+        return nSubsidy + nFees;
+    }
 
-	// nex 84 * 365 days
-	int i = 0;
-	for (i = 0; i < 21; i++) {
-        if ( (i+1) * 365 * 144 * 4 +303*144< nHeight && nHeight <= (i+2)*365 * 144 * 4+303*144) {
-			nSubsidy = blockValue[i+23] * COIN;
-			    return nSubsidy + nFees ;
+    // nex 84 * 365 days
+    int i = 0;
+    for (i = 0; i < 21; i++) {
+        if ((i + 1) * 365 * 144 * 4 + 303 * 144 < nHeight &&
+            nHeight <= (i + 2) * 365 * 144 * 4 + 303 * 144) {
+            nSubsidy = blockValue[i + 23] * COIN;
+            return nSubsidy + nFees;
         }
-	}
+    }
 
-	// the last block
-	if ( 88 * 365 * 144 + 303*144  < nHeight &&  nHeight <=  88 * 365 * 144 + 1 + 303*144) {
+    // the last block
+    if (88 * 365 * 144 + 303 * 144 < nHeight &&
+        nHeight <= 88 * 365 * 144 + 1 + 303 * 144) {
         nSubsidy = blockValue[44];
-		    return nSubsidy + nFees ;
-	}
+        return nSubsidy + nFees;
+    }
     return 0;
 }
 
@@ -1476,51 +1501,47 @@ int64 GetBlockValue(int nHeight, int64 nFees) {
 // minimum amount of work that could possibly be required nTime after
 // minimum work required was nBase
 //
-unsigned int ComputeMinWork(unsigned int nBase, int64 nTime)
-{
+unsigned int ComputeMinWork(unsigned int nBase, int64 nTime) {
     // Testnet has min-difficulty blocks
     // after nTargetSpacing*2 time between blocks:
-    if (fTestNet && nTime > nTargetSpacing*2)
-        return bnPowLowLimit;
+    if (fTestNet && nTime > nTargetSpacing * 2) return bnPowLowLimit;
 
     unsigned int bnResult = nBase;
-    while (nTime > 0 && bnResult < bnPowLowLimit)
-    {
+    while (nTime > 0 && bnResult < bnPowLowLimit) {
         // Maximum 400% adjustment...
         bnResult += 4;
         // ... in best-case exactly 4-times-normal target time
         if (pindexBest->nHeight <= 22176) {
-            nTime -= nTargetTimespan*4;
+            nTime -= nTargetTimespan * 4;
         } else {
-            nTime -= nNewTargetTimespan*4;
-		}
+            nTime -= nNewTargetTimespan * 4;
+        }
     }
-    if (bnResult > bnPowUpLimit)
-        bnResult = bnPowUpLimit;
+    if (bnResult > bnPowUpLimit) bnResult = bnPowUpLimit;
     return bnResult;
 }
 
-unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock)
-{
+unsigned int GetNextWorkRequired(const CBlockIndex *pindexLast,
+                                 const CBlockHeader *pblock) {
     unsigned int nProofOfWorkLimit = bnPowLowLimit;
 
     // Genesis block
-    if (pindexLast == NULL)
-        return nProofOfWorkLimit;
+    if (pindexLast == NULL) return nProofOfWorkLimit;
 
     // Only change once per interval
     if (pindexLast->nHeight < 22176) {
-        if ((pindexLast->nHeight+1) % nInterval != 0)  {
-        // Special difficulty rule for testnet:
+        if ((pindexLast->nHeight + 1) % nInterval != 0) {
+            // Special difficulty rule for testnet:
             if (fTestNet) {
                 // If the new block's timestamp is more than 2* 10 minutes
                 // then allow mining of a min-difficulty block.
-                if (pblock->nTime > pindexLast->nTime + nTargetSpacing*2)
+                if (pblock->nTime > pindexLast->nTime + nTargetSpacing * 2)
                     return nProofOfWorkLimit;
-                else  {
+                else {
                     // Return the last non-special-min-difficulty-rules-block
-                    const CBlockIndex* pindex = pindexLast;
-                    while (pindex->pprev && pindex->nHeight % nInterval != 0 && pindex->nBits == nProofOfWorkLimit)
+                    const CBlockIndex *pindex = pindexLast;
+                    while (pindex->pprev && pindex->nHeight % nInterval != 0 &&
+                           pindex->nBits == nProofOfWorkLimit)
                         pindex = pindex->pprev;
                     return pindex->nBits;
                 }
@@ -1529,17 +1550,19 @@ unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHead
             return pindexLast->nBits;
         }
     } else {
-        if ((pindexLast->nHeight+1) % nNewInterval != 0)  {
-        // Special difficulty rule for testnet:
+        if ((pindexLast->nHeight + 1) % nNewInterval != 0) {
+            // Special difficulty rule for testnet:
             if (fTestNet) {
                 // If the new block's timestamp is more than 2* 10 minutes
                 // then allow mining of a min-difficulty block.
-                if (pblock->nTime > pindexLast->nTime + nTargetSpacing*2)
+                if (pblock->nTime > pindexLast->nTime + nTargetSpacing * 2)
                     return nProofOfWorkLimit;
-                else  {
+                else {
                     // Return the last non-special-min-difficulty-rules-block
-                    const CBlockIndex* pindex = pindexLast;
-                    while (pindex->pprev && pindex->nHeight % nNewInterval != 0 && pindex->nBits == nProofOfWorkLimit)
+                    const CBlockIndex *pindex = pindexLast;
+                    while (pindex->pprev &&
+                           pindex->nHeight % nNewInterval != 0 &&
+                           pindex->nBits == nProofOfWorkLimit)
                         pindex = pindex->pprev;
                     return pindex->nBits;
                 }
@@ -1547,60 +1570,64 @@ unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHead
 
             return pindexLast->nBits;
         }
-	}
-	
+    }
+
     // Go back by what we want to be 14 days worth of blocks
-    const CBlockIndex* pindexFirst = pindexLast;
-	if (pindexLast->nHeight < 22176) {
-        for (int i = 0; pindexFirst && i < nInterval-1; i++)
+    const CBlockIndex *pindexFirst = pindexLast;
+    if (pindexLast->nHeight < 22176) {
+        for (int i = 0; pindexFirst && i < nInterval - 1; i++)
             pindexFirst = pindexFirst->pprev;
-            assert(pindexFirst);
-	} else {
-        for (int i = 0; pindexFirst && i < nNewInterval-1; i++)
+        assert(pindexFirst);
+    } else {
+        for (int i = 0; pindexFirst && i < nNewInterval - 1; i++)
             pindexFirst = pindexFirst->pprev;
-            assert(pindexFirst);
-	}
+        assert(pindexFirst);
+    }
     // Limit adjustment step
-    int64 nActualTimespan = pindexLast->GetBlockTime() - pindexFirst->GetBlockTime();
+    int64 nActualTimespan =
+        pindexLast->GetBlockTime() - pindexFirst->GetBlockTime();
     printf("  nActualTimespan = %" PRI64d "  before bounds\n", nActualTimespan);
-	if (pindexLast->nHeight < 22176) {
-        if (nActualTimespan < nTargetTimespan/4)
-            nActualTimespan = nTargetTimespan/4;
-        if (nActualTimespan > nTargetTimespan*4)
-            nActualTimespan = nTargetTimespan*4;
-	} else {
-        if (nActualTimespan < nNewTargetTimespan/4)
-            nActualTimespan = nNewTargetTimespan/4;
-        if (nActualTimespan > nNewTargetTimespan*4)
-            nActualTimespan = nNewTargetTimespan*4;
-	}
+    if (pindexLast->nHeight < 22176) {
+        if (nActualTimespan < nTargetTimespan / 4)
+            nActualTimespan = nTargetTimespan / 4;
+        if (nActualTimespan > nTargetTimespan * 4)
+            nActualTimespan = nTargetTimespan * 4;
+    } else {
+        if (nActualTimespan < nNewTargetTimespan / 4)
+            nActualTimespan = nNewTargetTimespan / 4;
+        if (nActualTimespan > nNewTargetTimespan * 4)
+            nActualTimespan = nNewTargetTimespan * 4;
+    }
 
     // Retarget
     int64 nAverageTime;
-	if (pindexLast->nHeight < 22176) {
+    if (pindexLast->nHeight < 22176) {
         nAverageTime = nActualTimespan / nInterval;
-	} else {
-		nAverageTime = nActualTimespan / nNewInterval;
-	}
-    int64 nAddVariables = (int64)std::llround(std::log2(((long double)nTargetSpacing)/nAverageTime));
-    int64 bnNew  =  pindexLast->nBits + nAddVariables;
+    } else {
+        nAverageTime = nActualTimespan / nNewInterval;
+    }
+    int64 nAddVariables = (int64)std::llround(
+        std::log2(((long double)nTargetSpacing) / nAverageTime));
+    int64 bnNew = pindexLast->nBits + nAddVariables;
 
-    if (bnNew > bnPowUpLimit)
-        bnNew = bnPowUpLimit;
+    if (bnNew > bnPowUpLimit) bnNew = bnPowUpLimit;
 
     /// debug print
     printf("GetNextWorkRequired RETARGET\n");
-	if (pindexLast->nHeight < 22176) {
-        printf("nTargetTimespan = %" PRI64d "    nActualTimespan = %" PRI64d "\n", nTargetTimespan, nActualTimespan);
-	} else {
-		printf("nTargetTimespan = %" PRI64d "	 nActualTimespan = %" PRI64d "\n", nNewTargetTimespan, nActualTimespan);
-	}
+    if (pindexLast->nHeight < 22176) {
+        printf("nTargetTimespan = %" PRI64d "    nActualTimespan = %" PRI64d
+               "\n",
+               nTargetTimespan, nActualTimespan);
+    } else {
+        printf("nTargetTimespan = %" PRI64d "	 nActualTimespan = %" PRI64d
+               "\n",
+               nNewTargetTimespan, nActualTimespan);
+    }
     printf("Before: %08x\n", pindexLast->nBits);
     printf("After:  %" PRI64d "\n", bnNew);
 
     return bnNew;
 }
-
 
 static std::bitset<8> ByteToBits(unsigned char byte) {
     return std::bitset<8>(byte);
@@ -1610,7 +1637,7 @@ static void Uint256ToBits(const unsigned char *bytes, std::bitset<256> &bits) {
     for (int i = 0; i < 32; i++) {
         std::bitset<8> tempbits = ByteToBits(bytes[i]);
         for (int j = 0; j < 8; j++) {
-            bits[i*8+j] = tempbits[j];
+            bits[i * 8 + j] = tempbits[j];
         }
     }
 }
@@ -1619,90 +1646,93 @@ static void ArrayShiftRight(uint8_t array[], int len, int nShift) {
     int i = 0;
     uint8_t temp;
     do {
-        i = (i+nShift) % len;
+        i = (i + nShift) % len;
         temp = array[i];
         array[i] = array[0];
         array[0] = temp;
-    } while(i);
+    } while (i);
 }
 
-static void  NewGenCoeffMatrix(uint256 hash, unsigned int nBits, std::vector<uint8_t> &coeffM) {
+static void NewGenCoeffMatrix(uint256 hash, unsigned int nBits,
+                              std::vector<uint8_t> &coeffM) {
     unsigned int mEquations = nBits;
-    unsigned int nUnknowns = nBits+8;
-    unsigned int nTerms = 1 + (nUnknowns+1)*(nUnknowns)/2;
-	//printf("\n **********************NewGenCoeffMatrix ***********************\n");
+    unsigned int nUnknowns = nBits + 8;
+    unsigned int nTerms = 1 + (nUnknowns + 1) * (nUnknowns) / 2;
+    // printf("\n **********************NewGenCoeffMatrix
+    // ***********************\n");
 
-    //generate the first polynomial coefficients.
+    // generate the first polynomial coefficients.
     unsigned char in[32], out[32];
-    unsigned int count = 0, i, j ,k;
+    unsigned int count = 0, i, j, k;
     uint8_t g[nTerms];
     std::bitset<256> bits;
-    pqcSha256(hash.begin(),32,in);
+    pqcSha256(hash.begin(), 32, in);
 
-	for (i = 0; i < mEquations ; i++) {
-	    count = 0;
-		do {
-            pqcSha256(in,32,out);
+    for (i = 0; i < mEquations; i++) {
+        count = 0;
+        do {
+            pqcSha256(in, 32, out);
             Uint256ToBits(out, bits);
             for (k = 0; k < 256; k++) {
-                if(count < nTerms) {
+                if (count < nTerms) {
                     g[count++] = (uint8_t)bits[k];
-                 } else {
-                     break;
-                 }
-             }
+                } else {
+                    break;
+                }
+            }
             for (j = 0; j < 32; j++) {
                 in[j] = out[j];
             }
-        } while(count < nTerms);
+        } while (count < nTerms);
         for (j = 0; j < nTerms; j++) {
-            coeffM[i*nTerms+j] = g[j];
+            coeffM[i * nTerms + j] = g[j];
         }
     }
 }
 
-static void  GenCoeffMatrix(uint256 hash, unsigned int nBits, std::vector<uint8_t> &coeffM) {
+static void GenCoeffMatrix(uint256 hash, unsigned int nBits,
+                           std::vector<uint8_t> &coeffM) {
     unsigned int mEquations = nBits;
-    unsigned int nUnknowns = nBits+8;
-    unsigned int nTerms = 1 + (nUnknowns+1)*(nUnknowns)/2;
-	//printf("\n $$$$$$$$$$$$$$$$$$$$$$   OLD  GenCoeffMatrix $$$$$$$$$$$$$$$$$$$$\n");
+    unsigned int nUnknowns = nBits + 8;
+    unsigned int nTerms = 1 + (nUnknowns + 1) * (nUnknowns) / 2;
+    // printf("\n $$$$$$$$$$$$$$$$$$$$$$   OLD  GenCoeffMatrix
+    // $$$$$$$$$$$$$$$$$$$$\n");
 
-    //generate the first polynomial coefficients.
+    // generate the first polynomial coefficients.
     unsigned char in[32], out[32];
-    unsigned int count = 0, i, j ,k;
+    unsigned int count = 0, i, j, k;
     uint8_t g[nTerms];
     std::bitset<256> bits;
-    pqcSha256(hash.begin(),32,in);
+    pqcSha256(hash.begin(), 32, in);
     do {
-         pqcSha256(in,32,out);
-         Uint256ToBits(out, bits);
-         for (k = 0; k < 256; k++) {
-             if(count < nTerms) {
-                 g[count++] = (uint8_t)bits[k];
-              } else {
-                  break;
-              }
-          }
-         for (j = 0; j < 32; j++) {
-             in[j] = out[j];
-         }
-    } while(count < nTerms);
+        pqcSha256(in, 32, out);
+        Uint256ToBits(out, bits);
+        for (k = 0; k < 256; k++) {
+            if (count < nTerms) {
+                g[count++] = (uint8_t)bits[k];
+            } else {
+                break;
+            }
+        }
+        for (j = 0; j < 32; j++) {
+            in[j] = out[j];
+        }
+    } while (count < nTerms);
 
-    //generate the rest polynomials coefficients by shiftint f[0] one bit
-    for (i = 0; i < mEquations ; i++) {
+    // generate the rest polynomials coefficients by shiftint f[0] one bit
+    for (i = 0; i < mEquations; i++) {
         ArrayShiftRight(g, nTerms, 1);
-        for (j = 0; j < nTerms; j++)
-            coeffM[i*nTerms+j] = g[j];
-    }	
-
+        for (j = 0; j < nTerms; j++) coeffM[i * nTerms + j] = g[j];
+    }
 }
 
-static void Uint256ToSolutionBits(uint8_t *x, unsigned int nUnknowns, uint256 nonce) {
+static void Uint256ToSolutionBits(uint8_t *x, unsigned int nUnknowns,
+                                  uint256 nonce) {
     std::bitset<256> bitnonce;
     Uint256ToBits(nonce.begin(), bitnonce);
     if (nUnknowns < 256) {
         for (unsigned int i = 0; i < nUnknowns; i++) {
-                x[i] = (uint8_t)bitnonce[i];
+            x[i] = (uint8_t)bitnonce[i];
         }
     } else {
         for (unsigned int i = 0; i < 256; i++) {
@@ -1711,7 +1741,8 @@ static void Uint256ToSolutionBits(uint8_t *x, unsigned int nUnknowns, uint256 no
     }
 }
 
-// Define the binomial function to calculate number of terms in different degrees.
+// Define the binomial function to calculate number of terms in different
+// degrees.
 static int Binomial(int n, int m) {
     if (m == 0)
         return 1;
@@ -1724,14 +1755,16 @@ static int Binomial(int n, int m) {
 }
 
 // Transform coefficientsMatrix into the structure required by exfes.
-static void TransformDataStructure (int n, int e, std::vector<uint8_t> &coefficientsMatrix, int ***Eqs) {
+static void TransformDataStructure(int n, int e,
+                                   std::vector<uint8_t> &coefficientsMatrix,
+                                   int ***Eqs) {
     uint64_t offset = 0;
-    for (int i=0; i<e; i++) {
-        for (int j=0; j<Binomial(n, 2); j++)
-            Eqs[i][2][j] = (int)coefficientsMatrix[offset+j];
+    for (int i = 0; i < e; i++) {
+        for (int j = 0; j < Binomial(n, 2); j++)
+            Eqs[i][2][j] = (int)coefficientsMatrix[offset + j];
         offset += Binomial(n, 2);
-        for (int j=0; j<n; j++)
-            Eqs[i][1][j] = (int)coefficientsMatrix[offset+j];
+        for (int j = 0; j < n; j++)
+            Eqs[i][1][j] = (int)coefficientsMatrix[offset + j];
         offset += n;
         Eqs[i][0][0] = (int)coefficientsMatrix[offset];
         offset += 1;
@@ -1739,24 +1772,26 @@ static void TransformDataStructure (int n, int e, std::vector<uint8_t> &coeffici
 }
 
 // Define a function to print equations for debugging.
-void PrintEquation (int n, int e, int ***Eqs) {
-    for (int i=0; i<e; i++) {
-        std::cout<<"Eqs["<<i<<"] =  ";
-        for (int j=2; j>=0; j--)
-            for (int k=0; k<Binomial(n, j); k++)
-                std::cout<<" "<<Eqs[i][j][k];
-        std::cout<<std::endl;
+void PrintEquation(int n, int e, int ***Eqs) {
+    for (int i = 0; i < e; i++) {
+        std::cout << "Eqs[" << i << "] =  ";
+        for (int j = 2; j >= 0; j--)
+            for (int k = 0; k < Binomial(n, j); k++)
+                std::cout << " " << Eqs[i][j][k];
+        std::cout << std::endl;
     }
 }
 
 // Define a function set all equation elements to zero.
-int ***CreateEquations (int n, int e) {
-    int ***Eqs = (int ***)calloc(e, sizeof(int **)); // Create an array for saving coefficients for exfes.
+int ***CreateEquations(int n, int e) {
+    int ***Eqs = (int ***)calloc(
+        e,
+        sizeof(int **));  // Create an array for saving coefficients for exfes.
     if (!Eqs) printf("malloc Eqs failure!\n");
-    for (int i=0; i<e; i++) {
+    for (int i = 0; i < e; i++) {
         Eqs[i] = (int **)calloc(3, sizeof(int *));
         if (!Eqs[i]) printf("malloc Eqs failure!\n");
-        for (int j=0; j<3; j++) {
+        for (int j = 0; j < 3; j++) {
             Eqs[i][j] = (int *)calloc(Binomial(n, j), sizeof(int));
             if (!Eqs[i][j]) printf("malloc Eqs failure!\n");
         }
@@ -1764,41 +1799,40 @@ int ***CreateEquations (int n, int e) {
     return Eqs;
 }
 
-void FreeEquations (int e, int ***Eqs) {
+void FreeEquations(int e, int ***Eqs) {
     if (Eqs) {
-        for (int i=0; i<e; i++) {
-            for (int j=0; j<3; j++) {
-                if (Eqs[i][j])
-                    free(Eqs[i][j]);
+        for (int i = 0; i < e; i++) {
+            for (int j = 0; j < 3; j++) {
+                if (Eqs[i][j]) free(Eqs[i][j]);
             }
-            if (Eqs[i])
-                free(Eqs[i]);
+            if (Eqs[i]) free(Eqs[i]);
         }
         free(Eqs);
     }
 }
 
 // Define a function set all array elements to zero.
-uint64_t **CreateArray (uint64_t maxsol) {
-    uint64_t **SolArray = (uint64_t **)calloc(maxsol, sizeof(uint64_t *)); // Create an array for exfes to store solutions.
-    for (uint64_t i=0; i<maxsol; i++) {
+uint64_t **CreateArray(uint64_t maxsol) {
+    uint64_t **SolArray = (uint64_t **)calloc(
+        maxsol,
+        sizeof(uint64_t *));  // Create an array for exfes to store solutions.
+    for (uint64_t i = 0; i < maxsol; i++) {
         SolArray[i] = (uint64_t *)calloc(4, sizeof(uint64_t));
     }
     return SolArray;
 }
 
-void FreeArray (uint64_t maxsol, uint64_t **SolArray) {
-    for (uint64_t i=0; i<maxsol; i++) {
+void FreeArray(uint64_t maxsol, uint64_t **SolArray) {
+    for (uint64_t i = 0; i < maxsol; i++) {
         free(SolArray[i]);
     }
     free(SolArray);
 }
 
-
 // Define a function to print solutions obtained from exfes.
-static int ReportSolution (uint64_t maxsol, uint64_t **SolArray, uint256 &s) {
-    for (uint64_t i=0; i<maxsol; i++) {
-        for (int j=3; j>=0; j--) {
+static int ReportSolution(uint64_t maxsol, uint64_t **SolArray, uint256 &s) {
+    for (uint64_t i = 0; i < maxsol; i++) {
+        for (int j = 3; j >= 0; j--) {
             s = s << 64;
             s ^= SolArray[i][j];
         }
@@ -1806,21 +1840,24 @@ static int ReportSolution (uint64_t maxsol, uint64_t **SolArray, uint256 &s) {
     return 0;
 }
 
-uint256 SerchSolution(uint256 hash, unsigned int nBits, uint256 randomNonce, CBlockIndex* pindexPrev) {
+uint256 SerchSolution(uint256 hash, unsigned int nBits, uint256 randomNonce,
+                      CBlockIndex *pindexPrev) {
     unsigned int mEquations = nBits;
     unsigned int nUnknowns = nBits + 8;
-    unsigned int nTerms = 1 + (nUnknowns+1)*(nUnknowns)/2;
+    unsigned int nTerms = 1 + (nUnknowns + 1) * (nUnknowns) / 2;
     std::vector<uint8_t> coeffMatrix;
-    coeffMatrix.resize(mEquations*nTerms);
-	if (pindexPrev->nHeight < 25216) {
+    coeffMatrix.resize(mEquations * nTerms);
+    if (pindexPrev->nHeight < 25216) {
         GenCoeffMatrix(hash, nBits, coeffMatrix);
-	} else {
+    } else {
         NewGenCoeffMatrix(hash, nBits, coeffMatrix);
-	}
+    }
     int ***Eqs = CreateEquations(nUnknowns, mEquations);
-    uint64_t maxsol = 1; // The solver only returns maxsol solutions. Other solutions will be discarded.
-    uint64_t **SolArray = CreateArray(maxsol); // Set all array elements to zero.
-    //serch
+    uint64_t maxsol = 1;  // The solver only returns maxsol solutions. Other
+                          // solutions will be discarded.
+    uint64_t **SolArray =
+        CreateArray(maxsol);  // Set all array elements to zero.
+    // serch
     uint256 nonce = 0;
     uint64_t startPoint[4];
     for (int width = 0; width < 4; width++) {
@@ -1832,47 +1869,52 @@ uint256 SerchSolution(uint256 hash, unsigned int nBits, uint256 randomNonce, CBl
     } else {
         nSearchVariables = 0;
     }
-    TransformDataStructure(nUnknowns, mEquations, coeffMatrix, Eqs); // Transform coefficientsMatrix into the structure required by exfes.
-    exfes(nSearchVariables, nUnknowns, mEquations, startPoint, maxsol, Eqs, SolArray, pindexPrev); // Solve equations by exfes.
-    ReportSolution(maxsol, SolArray, nonce); // Report obtained solutions in uint256 format.
+    TransformDataStructure(nUnknowns, mEquations, coeffMatrix,
+                           Eqs);  // Transform coefficientsMatrix into the
+                                  // structure required by exfes.
+    exfes(nSearchVariables, nUnknowns, mEquations, startPoint, maxsol, Eqs,
+          SolArray, pindexPrev);  // Solve equations by exfes.
+    ReportSolution(maxsol, SolArray,
+                   nonce);  // Report obtained solutions in uint256 format.
     FreeEquations(mEquations, Eqs);
     FreeArray(maxsol, SolArray);
     return nonce;
-
 }
 
-bool CheckSolution(uint256 hash, unsigned int nBits, uint256 preblockhash, int nblockversion, uint256 nNonce) {
+bool CheckSolution(uint256 hash, unsigned int nBits, uint256 preblockhash,
+                   int nblockversion, uint256 nNonce) {
     unsigned int mEquations = nBits;
-    unsigned int nUnknowns = nBits+8;
-    unsigned int nTerms = 1 + (nUnknowns+1)*(nUnknowns)/2;
+    unsigned int nUnknowns = nBits + 8;
+    unsigned int nTerms = 1 + (nUnknowns + 1) * (nUnknowns) / 2;
     std::vector<uint8_t> coeffMatrix;
-    coeffMatrix.resize(mEquations*nTerms);
+    coeffMatrix.resize(mEquations * nTerms);
 
     // Get prev block index
-    CBlockIndex* pindexPrev = NULL;
+    CBlockIndex *pindexPrev = NULL;
     int height = 0;
-	uint256 initHash = 0;
+    uint256 initHash = 0;
     if (preblockhash != initHash) {
-        std::map<uint256, CBlockIndex*>::iterator mi = mapBlockIndex.find(preblockhash);
+        std::map<uint256, CBlockIndex *>::iterator mi =
+            mapBlockIndex.find(preblockhash);
         if (mi == mapBlockIndex.end()) {
             if (nblockversion == 1) {
                 height = 0;
-			} 
-			if (nblockversion == 2) {
+            }
+            if (nblockversion == 2) {
                 height = 25217;
-			}
-		} else {
+            }
+        } else {
             pindexPrev = (*mi).second;
-            height = pindexPrev->nHeight+1;
-		}
+            height = pindexPrev->nHeight + 1;
+        }
     } else {
         height = 0;
-	}
+    }
     if (height < 25217) {
-	    GenCoeffMatrix(hash, nBits, coeffMatrix);
+        GenCoeffMatrix(hash, nBits, coeffMatrix);
     } else {
         NewGenCoeffMatrix(hash, nBits, coeffMatrix);
-	}
+    }
     unsigned int i, j, k, count;
     uint8_t x[nUnknowns], tempbit;
     Uint256ToSolutionBits(x, nUnknowns, nNonce);
@@ -1881,35 +1923,32 @@ bool CheckSolution(uint256 hash, unsigned int nBits, uint256 preblockhash, int n
         tempbit = 0;
         count = 0;
         for (i = 0; i < nUnknowns; i++) {
-            for (j = i+1; j < nUnknowns; j++) {
-                tempbit ^= (coeffMatrix[k*nTerms+count] * x[i] * x[j]);
+            for (j = i + 1; j < nUnknowns; j++) {
+                tempbit ^= (coeffMatrix[k * nTerms + count] * x[i] * x[j]);
                 count++;
             }
         }
         for (i = 0; i < nUnknowns; i++) {
-            tempbit ^= (coeffMatrix[k*nTerms+count]* x[i]);
+            tempbit ^= (coeffMatrix[k * nTerms + count] * x[i]);
             count++;
         }
-        tempbit ^= (coeffMatrix[k*nTerms+count]);
+        tempbit ^= (coeffMatrix[k * nTerms + count]);
         if (tempbit != 0) {
             return false;
         }
     }
 
     return true;
-
 }
 
-
-bool CheckProofOfWork(uint256 hash, unsigned int nBits, uint256 preblockhash, int nblockversion,  uint256 nNonce)
-{
+bool CheckProofOfWork(uint256 hash, unsigned int nBits, uint256 preblockhash,
+                      int nblockversion, uint256 nNonce) {
     unsigned int bnTarget = nBits;
 
     // Check range
     if (bnTarget <= 0 || bnTarget > bnPowUpLimit)
         return error("CheckProofOfWork() : nBits below minimum work");
-    if (nNonce == -1 && nblockversion > 1)
-        return false;
+    if (nNonce == -1 && nblockversion > 1) return false;
     // Check proof of work matches claimed amount
     if (!CheckSolution(hash, nBits, preblockhash, nblockversion, nNonce))
         return error("CheckProofOfWork() : hash doesn't match nBits");
@@ -1917,11 +1956,10 @@ bool CheckProofOfWork(uint256 hash, unsigned int nBits, uint256 preblockhash, in
     return true;
 }
 
-int static FormatHashBlocks(void* pbuffer, unsigned int len)
-{
-    unsigned char* pdata = (unsigned char*)pbuffer;
+int static FormatHashBlocks(void *pbuffer, unsigned int len) {
+    unsigned char *pdata = (unsigned char *)pbuffer;
     unsigned int blocks = 1 + ((len + 8) / 64);
-    unsigned char* pend = pdata + 64 * blocks;
+    unsigned char *pend = pdata + 64 * blocks;
     memset(pdata + len, 0, 64 * blocks - len);
     pdata[len] = 0x80;
     unsigned int bits = len * 8;
@@ -1932,111 +1970,102 @@ int static FormatHashBlocks(void* pbuffer, unsigned int len)
     return blocks;
 }
 
-static const unsigned int pSHA256InitState[8] =
-{0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
+static const unsigned int pSHA256InitState[8] = {
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+    0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
 
-void SHA256Transform(void* pstate, void* pinput, const void* pinit)
-{
+void SHA256Transform(void *pstate, void *pinput, const void *pinit) {
     Sha256 ctx;
     unsigned char data[64];
 
     sha256Init(&ctx);
 
     for (int i = 0; i < 16; i++)
-        ((uint32_t*)data)[i] = ByteReverse(((uint32_t*)pinput)[i]);
+        ((uint32_t *)data)[i] = ByteReverse(((uint32_t *)pinput)[i]);
 
-    for (int i = 0; i < 8; i++)
-        ctx.state[i] = ((uint32_t*)pinit)[i];
+    for (int i = 0; i < 8; i++) ctx.state[i] = ((uint32_t *)pinit)[i];
 
     sha256Process(&ctx, data, sizeof(data));
-    for (int i = 0; i < 8; i++)
-        ((uint32_t*)pstate)[i] = ctx.state[i];
+    for (int i = 0; i < 8; i++) ((uint32_t *)pstate)[i] = ctx.state[i];
 }
 
-
 // Some explaining would be appreciated
-class COrphan
-{
-public:
-    CTransaction* ptx;
+class COrphan {
+   public:
+    CTransaction *ptx;
     set<uint256> setDependsOn;
     double dPriority;
     double dFeePerKb;
 
-    COrphan(CTransaction* ptxIn)
-    {
+    COrphan(CTransaction *ptxIn) {
         ptx = ptxIn;
         dPriority = dFeePerKb = 0;
     }
 
-    void print() const
-    {
+    void print() const {
         printf("COrphan(hash=%s, dPriority=%.1f, dFeePerKb=%.1f)\n",
                ptx->GetHash().ToString().c_str(), dPriority, dFeePerKb);
-        BOOST_FOREACH(uint256 hash, setDependsOn)
+        BOOST_FOREACH (uint256 hash, setDependsOn)
             printf("   setDependsOn %s\n", hash.ToString().c_str());
     }
 };
 
-
 // We want to sort transactions by priority and fee, so:
-typedef boost::tuple<double, double, CTransaction*> TxPriority;
-class TxPriorityCompare
-{
+typedef boost::tuple<double, double, CTransaction *> TxPriority;
+class TxPriorityCompare {
     bool byFee;
-public:
-    TxPriorityCompare(bool _byFee) : byFee(_byFee) { }
-    bool operator()(const TxPriority& a, const TxPriority& b)
-    {
-        if (byFee)
-        {
-            if (a.get<1>() == b.get<1>())
-                return a.get<0>() < b.get<0>();
+
+   public:
+    TxPriorityCompare(bool _byFee) : byFee(_byFee) {}
+    bool operator()(const TxPriority &a, const TxPriority &b) {
+        if (byFee) {
+            if (a.get<1>() == b.get<1>()) return a.get<0>() < b.get<0>();
             return a.get<1>() < b.get<1>();
-        }
-        else
-        {
-            if (a.get<0>() == b.get<0>())
-                return a.get<1>() < b.get<1>();
+        } else {
+            if (a.get<0>() == b.get<0>()) return a.get<1>() < b.get<1>();
             return a.get<0>() < b.get<0>();
         }
     }
 };
 
-void IncrementExtraNonce(CBlock* pblock, CBlockIndex* pindexPrev, unsigned int& nExtraNonce)
-{
+void IncrementExtraNonce(CBlock *pblock, CBlockIndex *pindexPrev,
+                         unsigned int &nExtraNonce) {
     // Update nExtraNonce
     static uint256 hashPrevBlock;
-    if (hashPrevBlock != pblock->hashPrevBlock)
-    {
+    if (hashPrevBlock != pblock->hashPrevBlock) {
         nExtraNonce = 0;
         hashPrevBlock = pblock->hashPrevBlock;
     }
     ++nExtraNonce;
-    unsigned int nHeight = pindexPrev->nHeight+1; // Height first in coinbase required for block.version=2
-    pblock->vtx[0].vin[0].scriptSig = (CScript() << nHeight << CScriptNum(nExtraNonce));
-    assert(pblock->vtx[0].vin[0].scriptSig.size() <= 200*1024);
+    unsigned int nHeight =
+        pindexPrev->nHeight +
+        1;  // Height first in coinbase required for block.version=2
+    pblock->vtx[0].vin[0].scriptSig =
+        (CScript() << nHeight << CScriptNum(nExtraNonce));
+    assert(pblock->vtx[0].vin[0].scriptSig.size() <= 200 * 1024);
 
     pblock->hashMerkleRoot = pblock->BuildMerkleTree();
 }
 
-
-bool CheckWork(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey)
-{
-    if (pblock->hashPrevBlock != hashBestChain)
-        return false;
+bool CheckWork(CBlock *pblock, CWallet &wallet, CReserveKey &reservekey) {
+    if (pblock->hashPrevBlock != hashBestChain) return false;
 
     //// debug print
     printf("AbcmintMiner:\n");
     pblock->print();
-    printf("generated %s\n", FormatMoney(pblock->vtx[0].vout[0].nValue).c_str());
+    printf("generated %s\n",
+           FormatMoney(pblock->vtx[0].vout[0].nValue).c_str());
 
     // Found a solution
     {
         LOCK(cs_main);
         if (pblock->hashPrevBlock != hashBestChain) {
-            printf("\n\n ***********hashBestChain****************** %s \n\n", hashBestChain.ToString().c_str());
-            printf("\n\n ***********pblock->hashPrevBlock****************** %s \n\n", pblock->hashPrevBlock.ToString().c_str());
+            printf("\n\n ***********hashBestChain****************** %s \n\n",
+                   hashBestChain.ToString().c_str());
+            printf(
+                "\n\n ***********pblock->hashPrevBlock****************** %s "
+                "\n\n",
+                pblock->hashPrevBlock.ToString().c_str());
             return error("AbcmintMiner : generated block is stale");
         }
 
@@ -2049,7 +2078,8 @@ bool CheckWork(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey)
             wallet.mapRequestCount[pblock->GetHash()] = 0;
         }
 
-        // Process this block the same as if we had received it from another node
+        // Process this block the same as if we had received it from another
+        // node
         CValidationState state;
         if (!ProcessBlock(state, NULL, pblock))
             return error("AbcmintMiner : ProcessBlock, block not accepted");
@@ -2058,13 +2088,11 @@ bool CheckWork(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey)
     return true;
 }
 
-CBlockTemplate* CreateNewBlock(CReserveKey& reservekey)
-{
+CBlockTemplate *CreateNewBlock(CReserveKey &reservekey) {
     // Create new block
     std::unique_ptr<CBlockTemplate> pblocktemplate(new CBlockTemplate());
-    if(!pblocktemplate.get())
-        return NULL;
-    CBlock *pblock = &pblocktemplate->block; // pointer for convenience
+    if (!pblocktemplate.get()) return NULL;
+    CBlock *pblock = &pblocktemplate->block;  // pointer for convenience
 
     // Create coinbase tx
     CTransaction txNew;
@@ -2072,27 +2100,29 @@ CBlockTemplate* CreateNewBlock(CReserveKey& reservekey)
     txNew.vin[0].prevout.SetNull();
     txNew.vout.resize(1);
     CPubKey pubkey;
-    if (!reservekey.GetReservedKey(pubkey))
-        return NULL;
+    if (!reservekey.GetReservedKey(pubkey)) return NULL;
     txNew.vout[0].scriptPubKey.SetDestination(pubkey.GetID());
 
     // Add our coinbase tx as first transaction
     pblock->vtx.push_back(txNew);
-    pblocktemplate->vTxFees.push_back(-1); // updated at end
-    pblocktemplate->vTxSigOps.push_back(-1); // updated at end
+    pblocktemplate->vTxFees.push_back(-1);    // updated at end
+    pblocktemplate->vTxSigOps.push_back(-1);  // updated at end
 
     // Largest block you're willing to create:
-    unsigned int nBlockMaxSize = GetArg("-blockmaxsize", DEFAULT_BLOCK_MAX_SIZE);
+    unsigned int nBlockMaxSize =
+        GetArg("-blockmaxsize", DEFAULT_BLOCK_MAX_SIZE);
     // Limit to betweeen 2000K and MAX_BLOCK_SIZE-2K for sanity:
-    //nBlockMaxSize = std::max((unsigned int)2000*1024, std::min((unsigned int)(MAX_BLOCK_SIZE-200*1024), nBlockMaxSize));
+    // nBlockMaxSize = std::max((unsigned int)2000*1024, std::min((unsigned
+    // int)(MAX_BLOCK_SIZE-200*1024), nBlockMaxSize));
 
     // How much of the block should be dedicated to high-priority transactions,
     // included regardless of the fees they pay
-    unsigned int nBlockPrioritySize = GetArg("-blockprioritysize", DEFAULT_BLOCK_PRIORITY_SIZE);
+    unsigned int nBlockPrioritySize =
+        GetArg("-blockprioritysize", DEFAULT_BLOCK_PRIORITY_SIZE);
     nBlockPrioritySize = std::min(nBlockMaxSize, nBlockPrioritySize);
 
-    // Minimum block size you want to create; block will be filled with free transactions
-    // until there are no more or the block reaches this size:
+    // Minimum block size you want to create; block will be filled with free
+    // transactions until there are no more or the block reaches this size:
     unsigned int nBlockMinSize = GetArg("-blockminsize", 0);
     nBlockMinSize = std::min(nBlockMaxSize, nBlockMinSize);
 
@@ -2100,55 +2130,52 @@ CBlockTemplate* CreateNewBlock(CReserveKey& reservekey)
     int64 nFees = 0;
     {
         LOCK2(cs_main, mempool.cs);
-        CBlockIndex* pindexPrev = pindexBest;
+        CBlockIndex *pindexPrev = pindexBest;
         CCoinsViewCache view(*pcoinsTip, true);
 
         // Priority order to process transactions
-        list<COrphan> vOrphan; // list memory doesn't move
-        map<uint256, vector<COrphan*> > mapDependers;
+        list<COrphan> vOrphan;  // list memory doesn't move
+        map<uint256, vector<COrphan *> > mapDependers;
         bool fPrintPriority = GetBoolArg("-printpriority");
 
         // This vector will be sorted into a priority queue:
         vector<TxPriority> vecPriority;
         vecPriority.reserve(mempool.mapTx.size());
-        for (map<uint256, CTransaction>::iterator mi = mempool.mapTx.begin(); mi != mempool.mapTx.end(); ++mi)
-        {
-            CTransaction& tx = (*mi).second;
-            if (tx.IsCoinBase() || !tx.IsFinal())
-                continue;
+        for (map<uint256, CTransaction>::iterator mi = mempool.mapTx.begin();
+             mi != mempool.mapTx.end(); ++mi) {
+            CTransaction &tx = (*mi).second;
+            if (tx.IsCoinBase() || !tx.IsFinal()) continue;
 
-            COrphan* porphan = NULL;
+            COrphan *porphan = NULL;
             double dPriority = 0;
             int64 nTotalIn = 0;
             bool fMissingInputs = false;
-            BOOST_FOREACH(const CTxIn& txin, tx.vin)
-            {
+            BOOST_FOREACH (const CTxIn &txin, tx.vin) {
                 // Read prev transaction
-                if (!view.HaveCoins(txin.prevout.hash))
-                {
+                if (!view.HaveCoins(txin.prevout.hash)) {
                     // This should never happen; all transactions in the memory
                     // pool should connect to either transactions in the chain
                     // or other transactions in the memory pool.
-                    if (!mempool.mapTx.count(txin.prevout.hash))
-                    {
+                    if (!mempool.mapTx.count(txin.prevout.hash)) {
                         printf("ERROR: mempool transaction missing input\n");
-                        if (fDebug) assert("mempool transaction missing input" == 0);
+                        if (fDebug)
+                            assert("mempool transaction missing input" == 0);
                         fMissingInputs = true;
-                        if (porphan)
-                            vOrphan.pop_back();
+                        if (porphan) vOrphan.pop_back();
                         break;
                     }
 
                     // Has to wait for dependencies
-                    if (!porphan)
-                    {
+                    if (!porphan) {
                         // Use list for automatic deletion
                         vOrphan.push_back(COrphan(&tx));
                         porphan = &vOrphan.back();
                     }
                     mapDependers[txin.prevout.hash].push_back(porphan);
                     porphan->setDependsOn.insert(txin.prevout.hash);
-                    nTotalIn += mempool.mapTx[txin.prevout.hash].vout[txin.prevout.n].nValue;
+                    nTotalIn += mempool.mapTx[txin.prevout.hash]
+                                    .vout[txin.prevout.n]
+                                    .nValue;
                     continue;
                 }
                 const CCoins &coins = view.GetCoins(txin.prevout.hash);
@@ -2163,21 +2190,23 @@ CBlockTemplate* CreateNewBlock(CReserveKey& reservekey)
             if (fMissingInputs) continue;
 
             // Priority is sum(valuein * age) / txsize
-            unsigned int nTxSize = ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION);
+            unsigned int nTxSize =
+                ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION);
             dPriority /= nTxSize;
 
-            // This is a more accurate fee-per-kilobyte than is used by the client code, because the
-            // client code rounds up the size to the nearest 1K. That's good, because it gives an
-            // incentive to create smaller transactions.
-            double dFeePerKb =  double(nTotalIn-tx.GetValueOut()) / (double(nTxSize)/1000.0);
+            // This is a more accurate fee-per-kilobyte than is used by the
+            // client code, because the client code rounds up the size to the
+            // nearest 1K. That's good, because it gives an incentive to create
+            // smaller transactions.
+            double dFeePerKb = double(nTotalIn - tx.GetValueOut()) /
+                               (double(nTxSize) / 1000.0);
 
-            if (porphan)
-            {
+            if (porphan) {
                 porphan->dPriority = dPriority;
                 porphan->dFeePerKb = dFeePerKb;
-            }
-            else
-                vecPriority.push_back(TxPriority(dPriority, dFeePerKb, &(*mi).second));
+            } else
+                vecPriority.push_back(
+                    TxPriority(dPriority, dFeePerKb, &(*mi).second));
         }
 
         // Collect transactions into block
@@ -2189,48 +2218,46 @@ CBlockTemplate* CreateNewBlock(CReserveKey& reservekey)
         TxPriorityCompare comparer(fSortedByFee);
         std::make_heap(vecPriority.begin(), vecPriority.end(), comparer);
 
-        while (!vecPriority.empty())
-        {
+        while (!vecPriority.empty()) {
             // Take highest priority transaction off the priority queue:
             double dPriority = vecPriority.front().get<0>();
             double dFeePerKb = vecPriority.front().get<1>();
-            CTransaction& tx = *(vecPriority.front().get<2>());
+            CTransaction &tx = *(vecPriority.front().get<2>());
 
             std::pop_heap(vecPriority.begin(), vecPriority.end(), comparer);
             vecPriority.pop_back();
 
             // Size limits
-            unsigned int nTxSize = ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION);
-            if (nBlockSize + nTxSize >= nBlockMaxSize)
-                continue;
+            unsigned int nTxSize =
+                ::GetSerializeSize(tx, SER_NETWORK, PROTOCOL_VERSION);
+            if (nBlockSize + nTxSize >= nBlockMaxSize) continue;
 
             // Legacy limits on sigOps:
             unsigned int nTxSigOps = tx.GetLegacySigOpCount();
-            if (nBlockSigOps + nTxSigOps >= MAX_BLOCK_SIGOPS)
-                continue;
+            if (nBlockSigOps + nTxSigOps >= MAX_BLOCK_SIGOPS) continue;
 
             // Skip free transactions if we're past the minimum block size:
-            if (fSortedByFee && (dFeePerKb < CTransaction::nMinTxFee) && (nBlockSize + nTxSize >= nBlockMinSize))
+            if (fSortedByFee && (dFeePerKb < CTransaction::nMinTxFee) &&
+                (nBlockSize + nTxSize >= nBlockMinSize))
                 continue;
 
-            // Prioritize by fee once past the priority size or we run out of high-priority
-            // transactions:
+            // Prioritize by fee once past the priority size or we run out of
+            // high-priority transactions:
             if (!fSortedByFee &&
-                ((nBlockSize + nTxSize >= nBlockPrioritySize) || (dPriority < COIN * 144 / 250)))
-            {
+                ((nBlockSize + nTxSize >= nBlockPrioritySize) ||
+                 (dPriority < COIN * 144 / 250))) {
                 fSortedByFee = true;
                 comparer = TxPriorityCompare(fSortedByFee);
-                std::make_heap(vecPriority.begin(), vecPriority.end(), comparer);
+                std::make_heap(vecPriority.begin(), vecPriority.end(),
+                               comparer);
             }
 
-            if (!tx.HaveInputs(view))
-                continue;
+            if (!tx.HaveInputs(view)) continue;
 
-            int64 nTxFees = tx.GetValueIn(view)-tx.GetValueOut();
+            int64 nTxFees = tx.GetValueIn(view) - tx.GetValueOut();
 
             nTxSigOps += tx.GetP2SHSigOpCount(view);
-            if (nBlockSigOps + nTxSigOps >= MAX_BLOCK_SIGOPS)
-                continue;
+            if (nBlockSigOps + nTxSigOps >= MAX_BLOCK_SIGOPS) continue;
 
             CValidationState state;
             tx.vPubKeys.clear();
@@ -2239,7 +2266,7 @@ CBlockTemplate* CreateNewBlock(CReserveKey& reservekey)
 
             CTxUndo txundo;
             uint256 hash = tx.GetHash();
-            tx.UpdateCoins(state, view, txundo, pindexPrev->nHeight+1, hash);
+            tx.UpdateCoins(state, view, txundo, pindexPrev->nHeight + 1, hash);
 
             // Added
             pblock->vtx.push_back(tx);
@@ -2250,24 +2277,22 @@ CBlockTemplate* CreateNewBlock(CReserveKey& reservekey)
             nBlockSigOps += nTxSigOps;
             nFees += nTxFees;
 
-            if (fPrintPriority)
-            {
-                printf("priority %.1f feeperkb %.1f txid %s\n",
-                       dPriority, dFeePerKb, tx.GetHash().ToString().c_str());
+            if (fPrintPriority) {
+                printf("priority %.1f feeperkb %.1f txid %s\n", dPriority,
+                       dFeePerKb, tx.GetHash().ToString().c_str());
             }
 
             // Add transactions that depend on this one to the priority queue
-            if (mapDependers.count(hash))
-            {
-                BOOST_FOREACH(COrphan* porphan, mapDependers[hash])
-                {
-                    if (!porphan->setDependsOn.empty())
-                    {
+            if (mapDependers.count(hash)) {
+                BOOST_FOREACH (COrphan *porphan, mapDependers[hash]) {
+                    if (!porphan->setDependsOn.empty()) {
                         porphan->setDependsOn.erase(hash);
-                        if (porphan->setDependsOn.empty())
-                        {
-                            vecPriority.push_back(TxPriority(porphan->dPriority, porphan->dFeePerKb, porphan->ptx));
-                            std::push_heap(vecPriority.begin(), vecPriority.end(), comparer);
+                        if (porphan->setDependsOn.empty()) {
+                            vecPriority.push_back(TxPriority(porphan->dPriority,
+                                                             porphan->dFeePerKb,
+                                                             porphan->ptx));
+                            std::push_heap(vecPriority.begin(),
+                                           vecPriority.end(), comparer);
                         }
                     }
                 }
@@ -2278,14 +2303,15 @@ CBlockTemplate* CreateNewBlock(CReserveKey& reservekey)
         nLastBlockSize = nBlockSize;
         printf("CreateNewBlock(): total size %" PRI64u "\n", nBlockSize);
 
-        pblock->vtx[0].vout[0].nValue = GetBlockValue(pindexPrev->nHeight+1, nFees);
+        pblock->vtx[0].vout[0].nValue =
+            GetBlockValue(pindexPrev->nHeight + 1, nFees);
         pblocktemplate->vTxFees[0] = -nFees;
 
         // Fill in header
-        pblock->hashPrevBlock  = pindexPrev->GetBlockHash();
+        pblock->hashPrevBlock = pindexPrev->GetBlockHash();
         pblock->UpdateTime(pindexPrev);
-        pblock->nBits          = GetNextWorkRequired(pindexPrev, pblock);
-        pblock->nNonce         = 0;
+        pblock->nBits = GetNextWorkRequired(pindexPrev, pblock);
+        pblock->nNonce = 0;
         pblock->vtx[0].vin[0].scriptSig = CScript() << OP_0 << OP_0;
         pblocktemplate->vTxSigOps[0] = pblock->vtx[0].GetLegacySigOpCount();
 
@@ -2301,46 +2327,39 @@ CBlockTemplate* CreateNewBlock(CReserveKey& reservekey)
     return pblocktemplate.release();
 }
 
-
-
-
-void FormatHashBuffers(CBlock* pblock, char* pmidstate, char* pdata, char* phash1)
-{
+void FormatHashBuffers(CBlock *pblock, char *pmidstate, char *pdata,
+                       char *phash1) {
     //
     // Pre-build hash buffers
     //
-    struct
-    {
-        struct unnamed2
-        {
+    struct {
+        struct unnamed2 {
             int nVersion;
             uint256 hashPrevBlock;
             uint256 hashMerkleRoot;
             unsigned int nTime;
             unsigned int nBits;
             uint256 nNonce;
-        }
-        block;
+        } block;
         unsigned char pchPadding0[64];
         uint256 hash1;
         unsigned char pchPadding1[64];
-    }
-    tmp;
+    } tmp;
     memset(&tmp, 0, sizeof(tmp));
 
-    tmp.block.nVersion       = pblock->nVersion;
-    tmp.block.hashPrevBlock  = pblock->hashPrevBlock;
+    tmp.block.nVersion = pblock->nVersion;
+    tmp.block.hashPrevBlock = pblock->hashPrevBlock;
     tmp.block.hashMerkleRoot = pblock->hashMerkleRoot;
-    tmp.block.nTime          = pblock->nTime;
-    tmp.block.nBits          = pblock->nBits;
-    tmp.block.nNonce         = pblock->nNonce;
+    tmp.block.nTime = pblock->nTime;
+    tmp.block.nBits = pblock->nBits;
+    tmp.block.nNonce = pblock->nNonce;
 
     FormatHashBlocks(&tmp.block, sizeof(tmp.block));
     FormatHashBlocks(&tmp.hash1, sizeof(tmp.hash1));
 
     // Byte swap all the input buffer
-    for (unsigned int i = 0; i < sizeof(tmp)/4; i++)
-        ((unsigned int*)&tmp)[i] = ByteReverse(((unsigned int*)&tmp)[i]);
+    for (unsigned int i = 0; i < sizeof(tmp) / 4; i++)
+        ((unsigned int *)&tmp)[i] = ByteReverse(((unsigned int *)&tmp)[i]);
 
     // Precalc the first half of the first hash, which stays constant
     SHA256Transform(pmidstate, &tmp.block, pSHA256InitState);
@@ -2349,8 +2368,7 @@ void FormatHashBuffers(CBlock* pblock, char* pmidstate, char* pdata, char* phash
     memcpy(phash1, &tmp.hash1, 64);
 }
 
-void static AbcmintMiner(CWallet *pwallet)
-{
+void static AbcmintMiner(CWallet *pwallet) {
     printf("AbcmintMiner started\n");
     SetThreadPriority(THREAD_PRIORITY_LOWEST);
     RenameThread("abcmint-miner");
@@ -2359,110 +2377,103 @@ void static AbcmintMiner(CWallet *pwallet)
     CReserveKey reservekey(pwallet);
     unsigned int nExtraNonce = 0;
 
-    try { while(true) {
-        while (vNodes.empty())
-            MilliSleep(1000);
+    try {
+        while (true) {
+            while (vNodes.empty()) MilliSleep(1000);
 
-        //
-        // Create new block
-        //
-        unsigned int nTransactionsUpdatedLast = nTransactionsUpdated;
-        CBlockIndex* pindexPrev = pindexBest;
+            //
+            // Create new block
+            //
+            unsigned int nTransactionsUpdatedLast = nTransactionsUpdated;
+            CBlockIndex *pindexPrev = pindexBest;
 
-        std::unique_ptr<CBlockTemplate> pblocktemplate(CreateNewBlock(reservekey));
-        if (!pblocktemplate.get())
-            return;
-        CBlock *pblock = &pblocktemplate->block;
-        IncrementExtraNonce(pblock, pindexPrev, nExtraNonce);
+            std::unique_ptr<CBlockTemplate> pblocktemplate(
+                CreateNewBlock(reservekey));
+            if (!pblocktemplate.get()) return;
+            CBlock *pblock = &pblocktemplate->block;
+            IncrementExtraNonce(pblock, pindexPrev, nExtraNonce);
 
-        printf("Running AbcmintMiner with %" PRIszu " transactions in block (%u bytes)\n", pblock->vtx.size(),
-               ::GetSerializeSize(*pblock, SER_NETWORK, PROTOCOL_VERSION));
+            printf("Running AbcmintMiner with %" PRIszu
+                   " transactions in block (%u bytes)\n",
+                   pblock->vtx.size(),
+                   ::GetSerializeSize(*pblock, SER_NETWORK, PROTOCOL_VERSION));
 
-
-        //
-        // Search
-        //
-        uint256 randomNonce = 0;
-        if (pblock->nBits + 8 <= 48) {
-            randomNonce = (uint64)random_uint32_t();
-        } else if ((pblock->nBits + 8 > 48) && (pblock->nBits + 8 <= 80)) {
-            randomNonce = random_uint64_t();
-        } else {
-            randomNonce = GetRandHash();
-        }
-
-        int64 nStart = GetTime();
-        uint256 tempHash = pblock->hashPrevBlock ^ pblock->hashMerkleRoot;
-        uint256 seedHash = Hash(BEGIN(tempHash), END(tempHash));
-		uint256 prevblockhash = 0;
-		if (pindexBest->GetBlockHash() == hashGenesisBlock || pindexPrev->pprev->GetBlockHash() == hashGenesisBlock) {
-		    prevblockhash = 0;
-		} else {
-            prevblockhash = pindexPrev->GetBlockHash();
-		}
-
-        while(true)
-        {
-            uint256 nNonceFound;
-
-            // Solve the multivariable quadratic polynomial equations.
-            nNonceFound = SerchSolution(seedHash, pblock->nBits, randomNonce,pindexPrev);
-
-            // Check if something found
-            if (nNonceFound !=  -1)
-            {
-                if (CheckSolution(seedHash, pblock->nBits, prevblockhash, pblock->nVersion, nNonceFound))
-                {
-                    // Found a solution
-                    pblock->nNonce = nNonceFound;
-                    SetThreadPriority(THREAD_PRIORITY_NORMAL);
-                    CheckWork(pblock, *pwalletMain, reservekey);
-                    SetThreadPriority(THREAD_PRIORITY_LOWEST);
-                    break;
-                }
+            //
+            // Search
+            //
+            uint256 randomNonce = 0;
+            if (pblock->nBits + 8 <= 48) {
+                randomNonce = (uint64)random_uint32_t();
+            } else if ((pblock->nBits + 8 > 48) && (pblock->nBits + 8 <= 80)) {
+                randomNonce = random_uint64_t();
+            } else {
+                randomNonce = GetRandHash();
             }
 
-            // Check for stop or if block needs to be rebuilt
-            boost::this_thread::interruption_point();
-            if (vNodes.empty())
-                break;
-            if (nTransactionsUpdated != nTransactionsUpdatedLast && GetTime() - nStart > 60)
-                break;
-            if (pindexPrev != pindexBest)
-                break;
+            int64 nStart = GetTime();
+            uint256 tempHash = pblock->hashPrevBlock ^ pblock->hashMerkleRoot;
+            uint256 seedHash = Hash(BEGIN(tempHash), END(tempHash));
+            uint256 prevblockhash = 0;
+            if (pindexBest->GetBlockHash() == hashGenesisBlock ||
+                pindexPrev->pprev->GetBlockHash() == hashGenesisBlock) {
+                prevblockhash = 0;
+            } else {
+                prevblockhash = pindexPrev->GetBlockHash();
+            }
 
-            // Update nTime every few seconds
-            pblock->UpdateTime(pindexPrev);
+            while (true) {
+                uint256 nNonceFound;
+
+                // Solve the multivariable quadratic polynomial equations.
+                nNonceFound = SerchSolution(seedHash, pblock->nBits,
+                                            randomNonce, pindexPrev);
+
+                // Check if something found
+                if (nNonceFound != -1) {
+                    if (CheckSolution(seedHash, pblock->nBits, prevblockhash,
+                                      pblock->nVersion, nNonceFound)) {
+                        // Found a solution
+                        pblock->nNonce = nNonceFound;
+                        SetThreadPriority(THREAD_PRIORITY_NORMAL);
+                        CheckWork(pblock, *pwalletMain, reservekey);
+                        SetThreadPriority(THREAD_PRIORITY_LOWEST);
+                        break;
+                    }
+                }
+
+                // Check for stop or if block needs to be rebuilt
+                boost::this_thread::interruption_point();
+                if (vNodes.empty()) break;
+                if (nTransactionsUpdated != nTransactionsUpdatedLast &&
+                    GetTime() - nStart > 60)
+                    break;
+                if (pindexPrev != pindexBest) break;
+
+                // Update nTime every few seconds
+                pblock->UpdateTime(pindexPrev);
+            }
         }
-    } }
-    catch (boost::thread_interrupted)
-    {
+    } catch (boost::thread_interrupted) {
         printf("AbcmintMiner terminated\n");
         throw;
     }
 }
 
-void GenerateAbcmints(bool fGenerate, CWallet* pwallet)
-{
-    static boost::thread_group* minerThreads = NULL;
+void GenerateAbcmints(bool fGenerate, CWallet *pwallet) {
+    static boost::thread_group *minerThreads = NULL;
 
     int nThreads = GetArg("-genproclimit", -1);
-    if (nThreads < 0)
-        nThreads = boost::thread::hardware_concurrency();
+    if (nThreads < 0) nThreads = boost::thread::hardware_concurrency();
 
-    if (minerThreads != NULL)
-    {
+    if (minerThreads != NULL) {
         minerThreads->interrupt_all();
         delete minerThreads;
         minerThreads = NULL;
     }
 
-    if (nThreads == 0 || !fGenerate)
-        return;
+    if (nThreads == 0 || !fGenerate) return;
 
     minerThreads = new boost::thread_group();
     for (int i = 0; i < nThreads; i++)
         minerThreads->create_thread(boost::bind(&AbcmintMiner, pwallet));
 }
-
-

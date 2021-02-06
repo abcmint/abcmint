@@ -2,20 +2,18 @@
 // Copyright (c) 2009-2012 The Bitcoin developers
 // Copyright (c) 2018 The Abcmint developers
 
-
-#include "main.h"
 #include "abcmintrpc.h"
+#include "main.h"
 
 using namespace json_spirit;
 using namespace std;
 
 void ScriptPubKeyToJSON(const CScript& scriptPubKey, Object& out);
 
-int GetDifficulty(const CBlockIndex* blockindex)
-{
-    // minimum difficulty = 41, means the multivariable quadratic equations have 28 variables.
-    if (blockindex == NULL)
-    {
+int GetDifficulty(const CBlockIndex* blockindex) {
+    // minimum difficulty = 41, means the multivariable quadratic equations have
+    // 28 variables.
+    if (blockindex == NULL) {
         if (pindexBest == NULL)
             return 41;
         else
@@ -24,20 +22,19 @@ int GetDifficulty(const CBlockIndex* blockindex)
     return (int)blockindex->nBits;
 }
 
-
-Object blockToJSON(const CBlock& block, const CBlockIndex* blockindex)
-{
+Object blockToJSON(const CBlock& block, const CBlockIndex* blockindex) {
     Object result;
     result.push_back(Pair("hash", block.GetHash().GetHex()));
     CMerkleTx txGen(block.vtx[0]);
     txGen.SetMerkleBranch(&block);
     result.push_back(Pair("confirmations", (int)txGen.GetDepthInMainChain()));
-    result.push_back(Pair("size", (int)::GetSerializeSize(block, SER_NETWORK, PROTOCOL_VERSION)));
+    result.push_back(Pair(
+        "size", (int)::GetSerializeSize(block, SER_NETWORK, PROTOCOL_VERSION)));
     result.push_back(Pair("height", blockindex->nHeight));
     result.push_back(Pair("version", block.nVersion));
     result.push_back(Pair("merkleroot", block.hashMerkleRoot.GetHex()));
     Array txs;
-    BOOST_FOREACH(const CTransaction&tx, block.vtx)
+    BOOST_FOREACH (const CTransaction& tx, block.vtx)
         txs.push_back(tx.GetHash().GetHex());
     result.push_back(Pair("tx", txs));
     result.push_back(Pair("time", (boost::int64_t)block.GetBlockTime()));
@@ -46,15 +43,15 @@ Object blockToJSON(const CBlock& block, const CBlockIndex* blockindex)
     result.push_back(Pair("difficulty", (int)GetDifficulty(blockindex)));
 
     if (blockindex->pprev)
-        result.push_back(Pair("previousblockhash", blockindex->pprev->GetBlockHash().GetHex()));
+        result.push_back(Pair("previousblockhash",
+                              blockindex->pprev->GetBlockHash().GetHex()));
     if (blockindex->pnext)
-        result.push_back(Pair("nextblockhash", blockindex->pnext->GetBlockHash().GetHex()));
+        result.push_back(
+            Pair("nextblockhash", blockindex->pnext->GetBlockHash().GetHex()));
     return result;
 }
 
-
-Value getblockcount(const Array& params, bool fHelp)
-{
+Value getblockcount(const Array& params, bool fHelp) {
     if (fHelp || params.size() != 0)
         throw runtime_error(
             "getblockcount\n"
@@ -63,20 +60,17 @@ Value getblockcount(const Array& params, bool fHelp)
     return nBestHeight;
 }
 
-
-Value getdifficulty(const Array& params, bool fHelp)
-{
+Value getdifficulty(const Array& params, bool fHelp) {
     if (fHelp || params.size() != 0)
         throw runtime_error(
             "getdifficulty\n"
-            "Returns the proof-of-work difficulty as a multiple of the minimum difficulty.");
+            "Returns the proof-of-work difficulty as a multiple of the minimum "
+            "difficulty.");
 
     return GetDifficulty();
 }
 
-
-Value settxfee(const Array& params, bool fHelp)
-{
+Value settxfee(const Array& params, bool fHelp) {
     if (fHelp || params.size() < 1 || params.size() > 1)
         throw runtime_error(
             "settxfee <amount>\n"
@@ -85,14 +79,13 @@ Value settxfee(const Array& params, bool fHelp)
     // Amount
     int64 nAmount = 0;
     if (params[0].get_real() != 0.0)
-        nAmount = AmountFromValue(params[0]);        // rejects 0.0 amounts
+        nAmount = AmountFromValue(params[0]);  // rejects 0.0 amounts
 
     nTransactionFee = nAmount;
     return true;
 }
 
-Value getrawmempool(const Array& params, bool fHelp)
-{
+Value getrawmempool(const Array& params, bool fHelp) {
     if (fHelp || params.size() != 0)
         throw runtime_error(
             "getrawmempool\n"
@@ -102,14 +95,13 @@ Value getrawmempool(const Array& params, bool fHelp)
     mempool.queryHashes(vtxid);
 
     Array a;
-    BOOST_FOREACH(const uint256& hash, vtxid)
+    BOOST_FOREACH (const uint256& hash, vtxid)
         a.push_back(hash.ToString());
 
     return a;
 }
 
-Value getblockhash(const Array& params, bool fHelp)
-{
+Value getblockhash(const Array& params, bool fHelp) {
     if (fHelp || params.size() != 1)
         throw runtime_error(
             "getblockhash <index>\n"
@@ -123,8 +115,7 @@ Value getblockhash(const Array& params, bool fHelp)
     return pblockindex->phashBlock->GetHex();
 }
 
-Value getblock(const Array& params, bool fHelp)
-{
+Value getblock(const Array& params, bool fHelp) {
     if (fHelp || params.size() != 1)
         throw runtime_error(
             "getblock <hash>\n"
@@ -143,8 +134,7 @@ Value getblock(const Array& params, bool fHelp)
     return blockToJSON(block, pblockindex);
 }
 
-Value gettxoutsetinfo(const Array& params, bool fHelp)
-{
+Value gettxoutsetinfo(const Array& params, bool fHelp) {
     if (fHelp || params.size() != 0)
         throw runtime_error(
             "gettxoutsetinfo\n"
@@ -156,17 +146,20 @@ Value gettxoutsetinfo(const Array& params, bool fHelp)
     if (pcoinsTip->GetStats(stats)) {
         ret.push_back(Pair("height", (boost::int64_t)stats.nHeight));
         ret.push_back(Pair("bestblock", stats.hashBlock.GetHex()));
-        ret.push_back(Pair("transactions", (boost::int64_t)stats.nTransactions));
-        ret.push_back(Pair("txouts", (boost::int64_t)stats.nTransactionOutputs));
-        ret.push_back(Pair("bytes_serialized", (boost::int64_t)stats.nSerializedSize));
+        ret.push_back(
+            Pair("transactions", (boost::int64_t)stats.nTransactions));
+        ret.push_back(
+            Pair("txouts", (boost::int64_t)stats.nTransactionOutputs));
+        ret.push_back(
+            Pair("bytes_serialized", (boost::int64_t)stats.nSerializedSize));
         ret.push_back(Pair("hash_serialized", stats.hashSerialized.GetHex()));
-        ret.push_back(Pair("total_amount", ValueFromAmount(stats.nTotalAmount)));
+        ret.push_back(
+            Pair("total_amount", ValueFromAmount(stats.nTotalAmount)));
     }
     return ret;
 }
 
-Value gettxout(const Array& params, bool fHelp)
-{
+Value gettxout(const Array& params, bool fHelp) {
     if (fHelp || params.size() < 2 || params.size() > 3)
         throw runtime_error(
             "gettxout <txid> <n> [includemempool=true]\n"
@@ -178,28 +171,28 @@ Value gettxout(const Array& params, bool fHelp)
     uint256 hash(strHash);
     int n = params[1].get_int();
     bool fMempool = true;
-    if (params.size() > 2)
-        fMempool = params[2].get_bool();
+    if (params.size() > 2) fMempool = params[2].get_bool();
 
     CCoins coins;
     if (fMempool) {
         LOCK(mempool.cs);
         CCoinsViewMemPool view(*pcoinsTip, mempool);
-        if (!view.GetCoins(hash, coins))
-            return Value::null;
-        mempool.pruneSpent(hash, coins); // TODO: this should be done by the CCoinsViewMemPool
+        if (!view.GetCoins(hash, coins)) return Value::null;
+        mempool.pruneSpent(
+            hash, coins);  // TODO: this should be done by the CCoinsViewMemPool
     } else {
-        if (!pcoinsTip->GetCoins(hash, coins))
-            return Value::null;
+        if (!pcoinsTip->GetCoins(hash, coins)) return Value::null;
     }
-    if (n<0 || (unsigned int)n>=coins.vout.size() || coins.vout[n].IsNull())
+    if (n < 0 || (unsigned int)n >= coins.vout.size() || coins.vout[n].IsNull())
         return Value::null;
 
-    ret.push_back(Pair("bestblock", pcoinsTip->GetBestBlock()->GetBlockHash().GetHex()));
+    ret.push_back(
+        Pair("bestblock", pcoinsTip->GetBestBlock()->GetBlockHash().GetHex()));
     if ((unsigned int)coins.nHeight == MEMPOOL_HEIGHT)
         ret.push_back(Pair("confirmations", 0));
     else
-        ret.push_back(Pair("confirmations", pcoinsTip->GetBestBlock()->nHeight - coins.nHeight + 1));
+        ret.push_back(Pair("confirmations", pcoinsTip->GetBestBlock()->nHeight -
+                                                coins.nHeight + 1));
     ret.push_back(Pair("value", ValueFromAmount(coins.vout[n].nValue)));
     Object o;
     ScriptPubKeyToJSON(coins.vout[n].scriptPubKey, o);
@@ -209,5 +202,3 @@ Value gettxout(const Array& params, bool fHelp)
 
     return ret;
 }
-
-
