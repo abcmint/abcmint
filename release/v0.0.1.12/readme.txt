@@ -1,0 +1,1 @@
+v0.0.1.12,  This version allows setting an address in the Addresses list that does not belong to this wallet as a Miner address, which can receive mining explosive blocks.
