@@ -183,37 +183,25 @@ public:
 
     bool IsValid() const
     {
-        unsigned int nExpectedSize = HASH_LEN_BYTES;
         bool fExpectTestNet = false;
         switch(nVersion)
         {
             case PUBKEY_ADDRESS:
-                nExpectedSize = HASH_LEN_BYTES; // Hash of public key
-                fExpectTestNet = false;
-                break;
             case SCRIPT_ADDRESS:
-                nExpectedSize = HASH_LEN_BYTES; // Hash of CScript
-                fExpectTestNet = false;
                 break;
 
             case PUBKEY_ADDRESS_TEST:
-                nExpectedSize = HASH_LEN_BYTES;
-                fExpectTestNet = true;
-                break;
             case SCRIPT_ADDRESS_TEST:
-                nExpectedSize = HASH_LEN_BYTES;
                 fExpectTestNet = true;
                 break;
 
             default:
                 return false;
         }
-        return fExpectTestNet == fTestNet && vchData.size() == nExpectedSize;
+        return fExpectTestNet == fTestNet && vchData.size() == HASH_LEN_BYTES;
     }
 
-    CAbcmintAddress()
-    {
-    }
+    CAbcmintAddress() {}
 
     CAbcmintAddress(const CTxDestination &dest)
     {
@@ -295,8 +283,8 @@ public:
     CSecret GetSecret()
     {
         CSecret vchSecret;
-        vchSecret.resize(RAINBOW_PRIVATE_KEY_SIZE);
-        memcpy(&vchSecret[0], &vchData[0], RAINBOW_PRIVATE_KEY_SIZE);
+        vchSecret.resize(vchData.size());
+        memcpy(&vchSecret[0], &vchData[0], vchData.size());
         return vchSecret;
     }
 
@@ -315,7 +303,7 @@ public:
             default:
                 return false;
         }
-        return fExpectTestNet == fTestNet && (vchData.size() == RAINBOW_PRIVATE_KEY_SIZE);
+        return fExpectTestNet == fTestNet;
     }
 
     bool SetString(const char* pszSecret)

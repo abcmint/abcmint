@@ -3,16 +3,15 @@
 #include "diskpubkeypos.h"
 #include "util.h"
 #include "init.h"
-#include "main.h"
 #include "wallet.h"
 
 
-bool FindPubKeyPos(std::string& pubKeyIn, CDiskPubKeyPos& pubKeyPos)
-{
 
-    CBlockIndex* pBlockIndex = pindexGenesisBlock;
+bool FindPubKeyPos(std::string& pubKeyIn, CDiskPubKeyPos& pubKeyPos, bool ignoreMaturity, CBlockIndex* pIndexStart)
+{
+    CBlockIndex* pBlockIndex = pIndexStart ? pIndexStart : pindexGenesisBlock;
     while (pBlockIndex && pindexBest) {
-        if (pindexBest->nHeight - pBlockIndex->nHeight + 1 < COINBASE_MATURITY+20) {
+        if (!ignoreMaturity && (pindexBest->nHeight - pBlockIndex->nHeight + 1 < COINBASE_MATURITY+20)) {
             printf("%s: block not maturity, height:%u\n", __func__, pindexBest->nHeight - pBlockIndex->nHeight + 1);
             return false;
         }
@@ -58,7 +57,7 @@ bool FindPubKeyPos(std::string& pubKeyIn, CDiskPubKeyPos& pubKeyPos)
                     offsetVin += sizeof(COutPoint); //transation hash length + prevout index length
                     offsetVin += GetSizeOfCompactSize(nScriptSigSize);
                     pubKeyPos.nPubKeyOffset = offset + offsetVin + found/2; // the offset in the current block, 2 hex char for one byte
-                    unsigned int npubKeyLength = GetSizeOfCompactSize(pubKeyIn.length());
+                    unsigned int npubKeyLength = getInScriptCompactSize(pubKeyIn.length()/2);
                     printf("public key found: offset:%u, offsetVin:%u, found:%u, npubKeyLength:%u. \n",
                             offset, offsetVin, found, npubKeyLength);
                     pubKeyPos.nPubKeyOffset -= npubKeyLength;
@@ -76,6 +75,11 @@ bool FindPubKeyPos(std::string& pubKeyIn, CDiskPubKeyPos& pubKeyPos)
 
     //still no transation contain this pubkey in the block chain
     return false;
+}
+
+bool FindPubKeyPos(std::string& pubKeyIn, CDiskPubKeyPos& pubKeyPos)
+{
+    return FindPubKeyPos(pubKeyIn, pubKeyPos, false, NULL);
 }
 
 bool GetPubKeyByPos(CDiskPubKeyPos pos, CPubKey& pubKey)
@@ -128,9 +132,6 @@ bool GetPubKeyByPos(CDiskPubKeyPos pos, CPubKey& pubKey)
         } else
             return error("%s() : invalid opcode=%x or I/O error", __PRETTY_FUNCTION__, opcode);
 
-        //currently rainbow public key size is fixed, maybe change in future, change this
-        if (nSize != RAINBOW_PUBLIC_KEY_SIZE) return error("%s() : public key size %d invalid", __PRETTY_FUNCTION__, nSize);
-
         unsigned int i = 0;
         while (i < nSize)
         {
@@ -138,6 +139,10 @@ bool GetPubKeyByPos(CDiskPubKeyPos pos, CPubKey& pubKey)
             pubKey.vchPubKey.resize(i + blk);
             file.read((char*)&pubKey.vchPubKey[i], blk * sizeof(unsigned char));
             i += blk;
+        }
+
+        if (!pubKey.IsValid()) {
+            return error("%s() : public key size %d invalid", __PRETTY_FUNCTION__, nSize);
         }
 
     } catch (std::exception &e) {
@@ -207,7 +212,6 @@ void PubKeyScanner(CWallet* pwalletMain)
 
     try {
         while(true) {
-
             std::set<CKeyID> setAddress;
             pwalletMain->GetKeys(setAddress);
             for (std::set<CKeyID>::iterator it = setAddress.begin(); it != setAddress.end(); ++it) {
@@ -220,7 +224,7 @@ void PubKeyScanner(CWallet* pwalletMain)
                 }
 
                 if(!UpdatePubKeyPos(pubKey, address)) {
-                    printf("address %s update public key position return false\n", address.c_str());
+                  //  printf("address %s update public key position failed\n", address.c_str());
                     allPosFound = false;
                     continue;
                 } else {
@@ -228,7 +232,6 @@ void PubKeyScanner(CWallet* pwalletMain)
                     if (mi != pwalletMain->mapAddressBook.end())
                         pwalletMain->NotifyAddressBookChanged(pwalletMain, *it, mi->second, true, CT_UPDATED);
                 }
-
             }
 
             if (allPosFound) {
@@ -236,7 +239,7 @@ void PubKeyScanner(CWallet* pwalletMain)
             } else
                 SetThreadPriority(THREAD_PRIORITY_NORMAL);
 
-            MilliSleep(allPosFound ? 4*60*60*1000 : 2*60*60*1000);
+            MilliSleep(allPosFound ? 120*60*1000 : 10*60*1000);
         }
     }
     catch (boost::thread_interrupted)
@@ -247,24 +250,7 @@ void PubKeyScanner(CWallet* pwalletMain)
 }
 
 //more logic extention (offer rpc command to user to control this thread)
-void SearchPubKeyPos(bool fScan)
+void SearchPubKeyPos(boost::thread_group& threadGroup)
 {
-    static boost::thread_group* scanerThreads = NULL;
-
-    int nThreads = GetArg("-scanerproclimit", -1);
-    if (nThreads < 0)
-        nThreads = 1;
-
-    if (scanerThreads != NULL)
-    {
-        scanerThreads->interrupt_all();
-        delete scanerThreads;
-        scanerThreads = NULL;
-    }
-
-    if (nThreads == 0 || !fScan)
-        return;
-
-    scanerThreads = new boost::thread_group();
-    scanerThreads->create_thread(boost::bind(&PubKeyScanner, pwalletMain));
+    threadGroup.create_thread(boost::bind(&PubKeyScanner, pwalletMain));
 }

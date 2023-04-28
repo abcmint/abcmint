@@ -25,7 +25,8 @@ extern const std::string CLIENT_DATE;
 // network protocol versioning
 //
 
-static const int PROTOCOL_VERSION = 70001;
+static const int PROTOCOL_MIN_VERSION = 80000;
+static const int PROTOCOL_VERSION = 80001;
 
 
 #endif

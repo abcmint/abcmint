@@ -9,6 +9,9 @@
 using namespace std;
 using namespace boost;
 
+#ifdef USE_GPU
+#include "gpumining.h"
+#endif
 
 typedef union {
     __m128i v;
@@ -238,7 +241,7 @@ void exhaustive_ia32_deg_2(LUT_t LUT, int n, pck_vector_t F[],
 
     // from now on, hamming weight is >= 1
     for(int idx_0=0; idx_0<n    ; idx_0++) {
-        if (pindexPrev != pindexBest) {
+        if (boost::this_thread::interruption_requested() || pindexPrev != pindexBest) {
             QUIT();
         }
         // special case when i has hamming weight exactly 1
@@ -253,7 +256,7 @@ void exhaustive_ia32_deg_2(LUT_t LUT, int n, pck_vector_t F[],
 
         const uint64_t rolled_end = weight_1_start + (1ll << min(9, idx_0));
         for(uint64_t i=1 + weight_1_start; i< rolled_end; i++) {
-            if (pindexPrev != pindexBest) {
+            if (boost::this_thread::interruption_requested() || pindexPrev != pindexBest) {
                 QUIT();
             }
             int pos = 0;
@@ -273,7 +276,7 @@ void exhaustive_ia32_deg_2(LUT_t LUT, int n, pck_vector_t F[],
 
         // unrolled critical section where the hamming weight is >= 2
         for(uint64_t j=512; j<(1ull << idx_0); j+=512) {
-            if (pindexPrev != pindexBest) {
+            if (boost::this_thread::interruption_requested() || pindexPrev != pindexBest) {
                 QUIT();
             }
             const uint64_t i = j + weight_1_start;
@@ -1198,6 +1201,12 @@ int M(uint64_t *Mask, int index) {
         return (Mask[1] >> (index - 64)) & 1;
 }
 
+uint8_t TM(uint64_t *Mask, int index) {
+    if (index < 64)
+        return (uint8_t)((Mask[0] >> index) & 1);
+    else
+        return (uint8_t)((Mask[1] >> (index - 64)) & 1);
+}
 
 int Merge_Solution (void *_ctx_ptr, uint64_t count, uint64_t *Sol) {
     struct exfes_context *p = (struct exfes_context*) _ctx_ptr;
@@ -1227,7 +1236,7 @@ int Merge_Solution (void *_ctx_ptr, uint64_t count, uint64_t *Sol) {
     return 1;
 }
 
-void exfes(int m, int n, int e, uint64_t *Mask, uint64_t maxsol, int ***Eqs, uint64_t **SolArray,CBlockIndex* pindexPrev) {
+void exfes(int m, int n, int e, uint64_t *Mask, uint64_t maxsol, int ***Eqs, uint64_t **SolArray,CBlockIndex* pindexPrev, int threadID, int threadCount) {
     struct exfes_context exfes_ctx;
     exfes_ctx.mcopy = m;
     exfes_ctx.ncopy = n;
@@ -1253,13 +1262,18 @@ void exfes(int m, int n, int e, uint64_t *Mask, uint64_t maxsol, int ***Eqs, uin
     // Make a copy of Eqs for evaluating fixed variables.
     int *** EqsCopy = CreateEquations(n, e);
 
+    uint64_t balance = (uint64_t)ceil((uint64_t)(1<<m)/(uint64_t)threadCount);
+    uint64_t upBound = std::min((uint64_t)(threadID+1)*balance, (uint64_t)(1<<m));
+    uint64_t downBound = threadID*balance;
+
     // Partition problem into (1<<n_fixed) sub_problems.
     int p = n - m;
     int npartial;
     int fixvalue;
-    for (exfes_ctx.solm=0; exfes_ctx.solm<(uint64_t)1<<m; exfes_ctx.solm++) {
-        if (pindexPrev != pindexBest)
+    for (exfes_ctx.solm = downBound; exfes_ctx.solm < upBound; exfes_ctx.solm++) {
+        if (boost::this_thread::interruption_requested() || pindexPrev != pindexBest)
             break;
+
         // Initialize npartial and EqsCopy.
         npartial = n;
         for (int i=0; i<e; i++)
@@ -1529,6 +1543,10 @@ unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHead
             return pindexLast->nBits;
         }
     } else {
+        if ((pindexLast->nHeight >= RAINBOWFORkHEIGHT - 1) && (pindexLast->nHeight < RAINBOWFORkHEIGHT - 1 + nNewInterval)) {
+            return 54;
+        }
+
         if ((pindexLast->nHeight+1) % nNewInterval != 0)  {
         // Special difficulty rule for testnet:
             if (fTestNet) {
@@ -1626,12 +1644,46 @@ static void ArrayShiftRight(uint8_t array[], int len, int nShift) {
     } while(i);
 }
 
+static void New2GenCoeffMatrix(uint256 hash, unsigned int nBits, std::vector<uint8_t> &coeffM) {
+    unsigned int mEquations = nBits;
+    unsigned int nUnknowns = nBits+8;
+    unsigned int nTerms = 1 + (nUnknowns+1)*(nUnknowns)/2;
+
+    unsigned char in[32], out[32];
+    unsigned int count = 0, i, j ,k;
+    uint8_t g[nTerms];
+    std::bitset<256> bits;
+
+    unsigned char tmp[64];
+    pqcSha512(hash.begin(),32,tmp);
+    pqcSha256(tmp,64,in);
+
+	for (i = 0; i < mEquations ; i++) {
+	    count = 0;
+		do {
+            pqcSha256(in,32,out);
+            Uint256ToBits(out, bits);
+            for (k = 0; k < 256; k++) {
+                if(count < nTerms) {
+                    g[count++] = (uint8_t)bits[k];
+                 } else {
+                     break;
+                 }
+             }
+            for (j = 0; j < 32; j++) {
+                in[j] = out[j];
+            }
+        } while(count < nTerms);
+        for (j = 0; j < nTerms; j++) {
+            coeffM[i*nTerms+j] = g[j];
+        }
+    }
+}
+
 static void  NewGenCoeffMatrix(uint256 hash, unsigned int nBits, std::vector<uint8_t> &coeffM) {
     unsigned int mEquations = nBits;
     unsigned int nUnknowns = nBits+8;
     unsigned int nTerms = 1 + (nUnknowns+1)*(nUnknowns)/2;
-	//printf("\n **********************NewGenCoeffMatrix ***********************\n");
-
     //generate the first polynomial coefficients.
     unsigned char in[32], out[32];
     unsigned int count = 0, i, j ,k;
@@ -1665,7 +1717,6 @@ static void  GenCoeffMatrix(uint256 hash, unsigned int nBits, std::vector<uint8_
     unsigned int mEquations = nBits;
     unsigned int nUnknowns = nBits+8;
     unsigned int nTerms = 1 + (nUnknowns+1)*(nUnknowns)/2;
-	//printf("\n $$$$$$$$$$$$$$$$$$$$$$   OLD  GenCoeffMatrix $$$$$$$$$$$$$$$$$$$$\n");
 
     //generate the first polynomial coefficients.
     unsigned char in[32], out[32];
@@ -1673,16 +1724,17 @@ static void  GenCoeffMatrix(uint256 hash, unsigned int nBits, std::vector<uint8_
     uint8_t g[nTerms];
     std::bitset<256> bits;
     pqcSha256(hash.begin(),32,in);
+	
     do {
          pqcSha256(in,32,out);
          Uint256ToBits(out, bits);
          for (k = 0; k < 256; k++) {
              if(count < nTerms) {
                  g[count++] = (uint8_t)bits[k];
-              } else {
-                  break;
-              }
-          }
+             } else {
+                 break;
+             }
+         }
          for (j = 0; j < 32; j++) {
              in[j] = out[j];
          }
@@ -1693,7 +1745,7 @@ static void  GenCoeffMatrix(uint256 hash, unsigned int nBits, std::vector<uint8_
         ArrayShiftRight(g, nTerms, 1);
         for (j = 0; j < nTerms; j++)
             coeffM[i*nTerms+j] = g[j];
-    }	
+    }
 
 }
 
@@ -1778,6 +1830,32 @@ void FreeEquations (int e, int ***Eqs) {
     }
 }
 
+uint8_t ***CreateEquationsUint8(int n, int e) {
+    uint8_t ***Eqs = (uint8_t ***)calloc(e, sizeof(uint8_t **)); 
+    if (!Eqs) printf("malloc Eqs failure!\n");
+    for (int i=0; i<e; i++) {
+        Eqs[i] = (uint8_t **)calloc(3, sizeof(uint8_t *));
+        if (!Eqs[i]) printf("malloc Eqs failure!\n");
+        for (int j=0; j<3; j++) {
+            Eqs[i][j] = (uint8_t *)calloc(Binomial(n, j), sizeof(uint8_t));
+            if (!Eqs[i][j]) printf("malloc Eqs failure!\n");
+        }
+    }
+    return Eqs;
+}
+void FreeEquationsUint8(int e, uint8_t ***Eqs) {
+    if (Eqs) {
+        for (int i=0; i<e; i++) {
+            for (int j=0; j<3; j++) {
+                if (Eqs[i][j])
+                    free(Eqs[i][j]);
+            }
+            if (Eqs[i])
+                free(Eqs[i]);
+        }
+        free(Eqs);
+    }
+}
 // Define a function set all array elements to zero.
 uint64_t **CreateArray (uint64_t maxsol) {
     uint64_t **SolArray = (uint64_t **)calloc(maxsol, sizeof(uint64_t *)); // Create an array for exfes to store solutions.
@@ -1806,7 +1884,93 @@ static int ReportSolution (uint64_t maxsol, uint64_t **SolArray, uint256 &s) {
     return 0;
 }
 
-uint256 SerchSolution(uint256 hash, unsigned int nBits, uint256 randomNonce, CBlockIndex* pindexPrev) {
+uint64_t  ReverseUint64ByBits(uint64_t  num){
+    unsigned int count = sizeof(num) * 8 - 1;
+    uint64_t reverse_num = num;
+    num >>= 1;
+    while(num)
+    {
+       reverse_num <<= 1;
+       reverse_num |= num & 1;
+       num >>= 1;
+       count--;
+    }
+    reverse_num <<= count;
+    return reverse_num;
+}
+static void TransformTo3D(int n, int e, std::vector<uint8_t> &coefficientsMatrix, uint8_t ***Eqs) {
+    uint64_t offset = 0;
+    for (int i=0; i<e; i++) {
+        for (int j=0; j<Binomial(n, 2); j++)
+            Eqs[i][2][j] = (uint8_t)coefficientsMatrix[offset+j];
+        offset += Binomial(n, 2);
+        for (int j=0; j<n; j++)
+            Eqs[i][1][j] = (uint8_t)coefficientsMatrix[offset+j];
+        offset += n;
+        Eqs[i][0][0] = (uint8_t)coefficientsMatrix[offset];
+        offset += 1;
+    }
+}
+static void TransTo1D(int n, int e, std::vector<uint8_t> &coefficientsMatrix, uint8_t ***Eqs) {
+    uint64_t offset = 0;
+    for (int i=0; i<e; i++) {
+        for (int j=0; j<Binomial(n, 2); j++)
+           coefficientsMatrix[offset+j]=Eqs[i][2][j] ;
+        offset += Binomial(n, 2);
+        for (int j=0; j<n; j++)
+           coefficientsMatrix[offset+j] =  Eqs[i][1][j];
+        offset += n;
+        coefficientsMatrix[offset] = Eqs[i][0][0] ;
+        offset += 1;
+    }
+}
+static void SolutionBitsToUint256(uint8_t *x, unsigned int nUnknowns, uint256 &nonce) {
+    nonce = 0;
+	uint256 base = 1;
+	for (int i = 0; i < nUnknowns; i++) {
+        if (x[i]) {
+            nonce  = (base<<i) | nonce;
+		}
+	}
+}
+static void AddQuadraticTerms(std::vector<uint8_t> &src, unsigned int n, unsigned int m, std::vector<uint32_t> &dest) {
+	int offset = 0 , count = 0;
+	for (unsigned int k = 0; k < m; k++) {
+        for (unsigned int i = 0; i < n; i++) {
+            for (unsigned int j = i; j < n; j++) {
+                if (i == j) {
+                    dest[offset++] = 0;
+			    } else {
+                    dest[offset++] = src[count++];
+			    }
+		    }
+	    }
+		for (unsigned int i = 0; i < n ; i++) {
+            dest[offset++] = src[count++];
+	    }
+	    dest[offset++] = src[count++];
+	}
+}
+static void LexToGradeReverseLex(std::vector<uint32_t> &src, unsigned int n, unsigned int m, uint32_t *coefficients) {
+    unsigned int nTerms = 1 +  (((n+1)*n)>>1) + n;
+	int offset = 0;
+    for (unsigned int k = 0; k < m; k++) {
+		int count = 0;
+        for (unsigned int i = 0; i < n; i++) {
+            for (unsigned int j = 0; j <= i; j++) {
+                coefficients[offset++] = (uint32_t)src[k*nTerms + j*n -(((j+1)*j)>>1) + i];
+				count++;
+			}
+		}
+		for (unsigned int i = 0; i < n; i++) {
+            coefficients[offset++] = (uint32_t)src[k*nTerms +count + i];
+		}
+		coefficients[offset++] = (uint32_t)src[k*nTerms + count + n];
+	}
+}
+
+#ifdef USE_GPU
+static uint256 GPUMinerSearchSolution(uint256 hash, unsigned int nBits, uint256 randomNonce, CBlockIndex* pindexPrev, int threadID, int threadCount) {
     unsigned int mEquations = nBits;
     unsigned int nUnknowns = nBits + 8;
     unsigned int nTerms = 1 + (nUnknowns+1)*(nUnknowns)/2;
@@ -1814,14 +1978,144 @@ uint256 SerchSolution(uint256 hash, unsigned int nBits, uint256 randomNonce, CBl
     coeffMatrix.resize(mEquations*nTerms);
 	if (pindexPrev->nHeight < 25216) {
         GenCoeffMatrix(hash, nBits, coeffMatrix);
-	} else {
+	} else if (pindexPrev->nHeight < RAINBOWFORkHEIGHT-1) {
         NewGenCoeffMatrix(hash, nBits, coeffMatrix);
-	}
+	} else {
+        New2GenCoeffMatrix(hash, nBits, coeffMatrix);
+    }
+	
+    uint8_t maskArray[nUnknowns];
+    Uint256ToSolutionBits(maskArray, nUnknowns, randomNonce);
+    uint8_t ***Eqs = CreateEquationsUint8(nUnknowns, mEquations);
+    uint64_t startPoint[4];
+    for (int width = 0; width < 4; width++) {
+        startPoint[width] = randomNonce.Get64(width);
+    }
+    TransformTo3D(nUnknowns, mEquations, coeffMatrix, Eqs);
+    for (int i=0; i<mEquations; i++) {
+        for (int j=0; j<nUnknowns; j++)
+            Eqs[i][0][0] ^= Eqs[i][1][j] & TM(startPoint, j);
+        int offset = 0;
+        for (int j=0; j<nUnknowns-1; j++)
+            for (int k=j+1; k<nUnknowns; k++) {
+                Eqs[i][0][0] ^= Eqs[i][2][offset] & TM(startPoint, j) & TM(startPoint, k);
+                Eqs[i][1][j] ^= Eqs[i][2][offset] & TM(startPoint, k);
+                Eqs[i][1][k] ^= Eqs[i][2][offset] & TM(startPoint, j);
+                offset += 1;
+            }
+    }
+    uint8_t *** EqsCopy = CreateEquationsUint8(nUnknowns, mEquations);
+    int nFix = 8;
+    if (nBits <= 40) {
+        nFix = 8;
+    } else {
+        nFix = nUnknowns - 40;
+    }
+    uint64_t balance = (uint64_t)ceil((uint64_t)(1<<nFix)/(uint64_t)threadCount);
+    uint64_t upBound = std::min((uint64_t)(threadID+1)*balance, (uint64_t)(1<<nFix));
+    uint64_t downBound = threadID*balance;
+    int p = nUnknowns - nFix;
+    int npartial;
+    uint8_t fixvalue;
+    uint256 nonce = 0;
+    uint8_t w[nUnknowns];
+    uint64_t solm = 0;
+    unsigned int newNumVariables = nUnknowns - nFix;
+    unsigned int newNumEquations = mEquations;
+    unsigned int newNumTerms = 1 + (newNumVariables+1)*(newNumVariables)/2;
+    uint64_t foundSolution = 0;
+    uint32_t *coefficients = (uint32_t *)malloc((mEquations*(newNumTerms + newNumVariables))*sizeof(uint32_t));
+    if (coefficients == NULL)
+        printf("ERROR: SearchSolution malloc failure!");
+    int searchTimes = 0;
+
+    for (solm = downBound; solm < upBound; solm++) {
+	    if (boost::this_thread::interruption_requested() || pindexPrev != pindexBest)
+            break;
+	    npartial = nUnknowns;
+	    for (int i=0; i<mEquations; i++)
+	        for (int j=0; j<3; j++)
+		        for (int k=0; k<Binomial(nUnknowns, j); k++)
+		            EqsCopy[i][j][k] = Eqs[i][j][k];
+	    while (npartial != p) {
+	        fixvalue = (uint8_t)((solm >> (nUnknowns - npartial)) & 1);
+	        for (int i=0; i<mEquations; i++) {
+		        for (int j=0; j<npartial-1; j++)
+		            EqsCopy[i][1][j+1] ^= EqsCopy[i][2][j] & fixvalue;
+        	    EqsCopy[i][0][0] ^= EqsCopy[i][1][0] & fixvalue;
+		        for (int j=0; j<npartial-1; j++)
+		            EqsCopy[i][1][j] = EqsCopy[i][1][j+1];
+		        for (int j=0; j<Binomial(npartial-1, 2); j++)
+			        EqsCopy[i][2][j] = EqsCopy[i][2][j+npartial-1];
+	        }
+	        npartial -= 1;
+	    }
+	    std::vector<uint8_t> dest;
+	    dest.resize(mEquations*newNumTerms);
+	    TransTo1D(newNumVariables, newNumEquations, dest, EqsCopy);
+	    std::vector<uint32_t> withQudraticTerms;
+	    withQudraticTerms.resize(mEquations*(newNumTerms + newNumVariables));
+	    AddQuadraticTerms(dest, newNumVariables, mEquations, withQudraticTerms);
+	    LexToGradeReverseLex(withQudraticTerms,newNumVariables,mEquations,coefficients);
+        foundSolution = GPUSearchSolution(coefficients, newNumVariables, mEquations);
+        uint256 fixSolution = uint256(foundSolution);
+        uint8_t x[newNumVariables];
+        Uint256ToSolutionBits(x, newNumVariables, fixSolution);
+        uint8_t z[nFix];
+        uint64_t fixv[1];
+        fixv[0] = solm;
+        for (unsigned int i = 0; i < nFix; i++) {
+            z[i] = TM(fixv, i);
+        }
+        for (unsigned int i = 0; i < nUnknowns; i++) {
+            if (i < nFix) {
+                w[i] = z[i]^maskArray[i] ;
+            } else {
+                w[i] = x[i-nFix]^maskArray[i];
+            }
+        }
+        nonce = 0;
+        SolutionBitsToUint256(w, nUnknowns,nonce);
+		uint256 prevblockhash = 0;
+		if (pindexPrev->GetBlockHash() == hashGenesisBlock || pindexPrev->pprev->GetBlockHash() == hashGenesisBlock) {
+		    prevblockhash = 0;
+		} else {
+            prevblockhash = pindexPrev->GetBlockHash();
+		}	
+        if ( CheckSolution(hash, nBits,prevblockhash, pindexPrev->nVersion,nonce))
+           break;
+    }
+
+    FreeEquationsUint8(mEquations, EqsCopy);
+    FreeEquationsUint8(mEquations, Eqs);
+    free(coefficients);
+
+    return nonce;
+}
+#endif
+
+uint256 SerchSolution(uint256 hash, unsigned int nBits, uint256 randomNonce, CBlockIndex* pindexPrev, int threadID, int threadCount) {
+    uint256 nonce = 0;
+#ifdef USE_GPU
+    nonce = GPUMinerSearchSolution(hash, nBits, randomNonce, pindexPrev, threadID, threadCount);
+#else
+   	unsigned int mEquations = nBits;
+    unsigned int nUnknowns = nBits + 8;
+    unsigned int nTerms = 1 + (nUnknowns+1)*(nUnknowns)/2;
+    std::vector<uint8_t> coeffMatrix;
+    coeffMatrix.resize(mEquations*nTerms);
+	if (pindexPrev->nHeight < 25216) {
+        GenCoeffMatrix(hash, nBits, coeffMatrix);
+	} else if (pindexPrev->nHeight < RAINBOWFORkHEIGHT-1) {
+        NewGenCoeffMatrix(hash, nBits, coeffMatrix);
+	} else {
+        New2GenCoeffMatrix(hash, nBits, coeffMatrix);
+    }
+	
     int ***Eqs = CreateEquations(nUnknowns, mEquations);
     uint64_t maxsol = 1; // The solver only returns maxsol solutions. Other solutions will be discarded.
     uint64_t **SolArray = CreateArray(maxsol); // Set all array elements to zero.
     //serch
-    uint256 nonce = 0;
     uint64_t startPoint[4];
     for (int width = 0; width < 4; width++) {
         startPoint[width] = randomNonce.Get64(width);
@@ -1833,15 +2127,16 @@ uint256 SerchSolution(uint256 hash, unsigned int nBits, uint256 randomNonce, CBl
         nSearchVariables = 0;
     }
     TransformDataStructure(nUnknowns, mEquations, coeffMatrix, Eqs); // Transform coefficientsMatrix into the structure required by exfes.
-    exfes(nSearchVariables, nUnknowns, mEquations, startPoint, maxsol, Eqs, SolArray, pindexPrev); // Solve equations by exfes.
+    exfes(nSearchVariables, nUnknowns, mEquations, startPoint, maxsol, Eqs, SolArray, pindexPrev, threadID, threadCount); // Solve equations by exfes.
     ReportSolution(maxsol, SolArray, nonce); // Report obtained solutions in uint256 format.
     FreeEquations(mEquations, Eqs);
     FreeArray(maxsol, SolArray);
+#endif
     return nonce;
 
 }
 
-bool CheckSolution(uint256 hash, unsigned int nBits, uint256 preblockhash, int nblockversion, uint256 nNonce) {
+bool CheckSolution(uint256 hash, unsigned int nBits, uint256 prevblockhash, int nblockversion, uint256 nNonce) {
     unsigned int mEquations = nBits;
     unsigned int nUnknowns = nBits+8;
     unsigned int nTerms = 1 + (nUnknowns+1)*(nUnknowns)/2;
@@ -1852,27 +2147,34 @@ bool CheckSolution(uint256 hash, unsigned int nBits, uint256 preblockhash, int n
     CBlockIndex* pindexPrev = NULL;
     int height = 0;
 	uint256 initHash = 0;
-    if (preblockhash != initHash) {
-        std::map<uint256, CBlockIndex*>::iterator mi = mapBlockIndex.find(preblockhash);
+    if (prevblockhash != initHash) {
+        std::map<uint256, CBlockIndex*>::iterator mi = mapBlockIndex.find(prevblockhash);
         if (mi == mapBlockIndex.end()) {
-            if (nblockversion == 1) {
-                height = 0;
-			} 
-			if (nblockversion == 2) {
-                height = 25217;
-			}
-		} else {
+            if (nBestHeight > RAINBOWFORkHEIGHT + 20) {
+                height = RAINBOWFORkHEIGHT;
+            } else {
+                if (nblockversion < BLOCK_VERSION2_BEFORE_FORK) {
+                    height = 0;
+                } else if (nblockversion < BLOCK_CURRENT_VERSION) {
+                    height = 25217;
+                } else {
+                    height = RAINBOWFORkHEIGHT;
+                }
+            }
+        } else {
             pindexPrev = (*mi).second;
             height = pindexPrev->nHeight+1;
-		}
+        }
     } else {
         height = 0;
 	}
     if (height < 25217) {
 	    GenCoeffMatrix(hash, nBits, coeffMatrix);
-    } else {
+    } else if (height < RAINBOWFORkHEIGHT) {
         NewGenCoeffMatrix(hash, nBits, coeffMatrix);
-	}
+	} else {
+        New2GenCoeffMatrix(hash, nBits, coeffMatrix);
+    }
     unsigned int i, j, k, count;
     uint8_t x[nUnknowns], tempbit;
     Uint256ToSolutionBits(x, nUnknowns, nNonce);
@@ -1901,17 +2203,17 @@ bool CheckSolution(uint256 hash, unsigned int nBits, uint256 preblockhash, int n
 }
 
 
-bool CheckProofOfWork(uint256 hash, unsigned int nBits, uint256 preblockhash, int nblockversion,  uint256 nNonce)
+bool CheckProofOfWork(uint256 hash, unsigned int nBits, uint256 prevblockhash, int nblockversion, uint256 nNonce)
 {
     unsigned int bnTarget = nBits;
 
     // Check range
     if (bnTarget <= 0 || bnTarget > bnPowUpLimit)
         return error("CheckProofOfWork() : nBits below minimum work");
-    if (nNonce == -1 && nblockversion > 1)
-        return false;
+    if (nNonce == uint256("0xffffffffffffffffffffffffffffffff") && nblockversion > 1)
+       return false;
     // Check proof of work matches claimed amount
-    if (!CheckSolution(hash, nBits, preblockhash, nblockversion, nNonce))
+    if (!CheckSolution(hash, nBits, prevblockhash, nblockversion, nNonce))
         return error("CheckProofOfWork() : hash doesn't match nBits");
 
     return true;
@@ -2027,9 +2329,9 @@ bool CheckWork(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey)
         return false;
 
     //// debug print
-    printf("AbcmintMiner:\n");
-    pblock->print();
-    printf("generated %s\n", FormatMoney(pblock->vtx[0].vout[0].nValue).c_str());
+    //printf("AbcmintMiner:\n");
+    //pblock->print();
+    //printf("generated %s\n", FormatMoney(pblock->vtx[0].vout[0].nValue).c_str());
 
     // Found a solution
     {
@@ -2071,37 +2373,39 @@ CBlockTemplate* CreateNewBlock(CReserveKey& reservekey)
     txNew.vin.resize(1);
     txNew.vin[0].prevout.SetNull();
     txNew.vout.resize(1);
-    CPubKey pubkey;
-    if (!reservekey.GetReservedKey(pubkey))
+
+    CKeyID keyId;
+    if (!reservekey.GetMinerAddress(keyId))
         return NULL;
-    txNew.vout[0].scriptPubKey.SetDestination(pubkey.GetID());
+    txNew.vout[0].scriptPubKey.SetDestination(keyId);
 
     // Add our coinbase tx as first transaction
     pblock->vtx.push_back(txNew);
     pblocktemplate->vTxFees.push_back(-1); // updated at end
     pblocktemplate->vTxSigOps.push_back(-1); // updated at end
 
-    // Largest block you're willing to create:
-    unsigned int nBlockMaxSize = GetArg("-blockmaxsize", DEFAULT_BLOCK_MAX_SIZE);
-    // Limit to betweeen 2000K and MAX_BLOCK_SIZE-2K for sanity:
-    //nBlockMaxSize = std::max((unsigned int)2000*1024, std::min((unsigned int)(MAX_BLOCK_SIZE-200*1024), nBlockMaxSize));
-
-    // How much of the block should be dedicated to high-priority transactions,
-    // included regardless of the fees they pay
-    unsigned int nBlockPrioritySize = GetArg("-blockprioritysize", DEFAULT_BLOCK_PRIORITY_SIZE);
-    nBlockPrioritySize = std::min(nBlockMaxSize, nBlockPrioritySize);
-
-    // Minimum block size you want to create; block will be filled with free transactions
-    // until there are no more or the block reaches this size:
-    unsigned int nBlockMinSize = GetArg("-blockminsize", 0);
-    nBlockMinSize = std::min(nBlockMaxSize, nBlockMinSize);
-
     // Collect memory pool transactions into the block
     int64 nFees = 0;
     {
+        if (boost::this_thread::interruption_requested()) {
+            return NULL;
+        }
         LOCK2(cs_main, mempool.cs);
         CBlockIndex* pindexPrev = pindexBest;
         CCoinsViewCache view(*pcoinsTip, true);
+
+        unsigned int nBlockMaxSize = 0;
+        if (pindexPrev->nHeight < RAINBOWFORkHEIGHT - 1) {
+            nBlockMaxSize = GetArg("-blockmaxsize", MAX_BLOCK_SIZE_BEFORE_FORK);
+        } else {
+            nBlockMaxSize = GetArg("-blockmaxsize", MAX_BLOCK_SIZE);
+        }
+
+        unsigned int nBlockPrioritySize = GetArg("-blockprioritysize", DEFAULT_BLOCK_PRIORITY_SIZE);
+        nBlockPrioritySize = std::min(nBlockMaxSize, nBlockPrioritySize);
+
+        unsigned int nBlockMinSize = GetArg("-blockminsize", 0);
+        nBlockMinSize = std::min(nBlockMaxSize, nBlockMinSize);
 
         // Priority order to process transactions
         list<COrphan> vOrphan; // list memory doesn't move
@@ -2288,6 +2592,10 @@ CBlockTemplate* CreateNewBlock(CReserveKey& reservekey)
         pblock->nNonce         = 0;
         pblock->vtx[0].vin[0].scriptSig = CScript() << OP_0 << OP_0;
         pblocktemplate->vTxSigOps[0] = pblock->vtx[0].GetLegacySigOpCount();
+        
+        if (pindexPrev->nHeight < RAINBOWFORkHEIGHT - 1) {
+            pblock->nVersion = BLOCK_VERSION2_BEFORE_FORK;
+        }
 
         CBlockIndex indexDummy(*pblock);
         indexDummy.pprev = pindexPrev;
@@ -2349,20 +2657,54 @@ void FormatHashBuffers(CBlock* pblock, char* pmidstate, char* pdata, char* phash
     memcpy(phash1, &tmp.hash1, 64);
 }
 
-void static AbcmintMiner(CWallet *pwallet)
+uint256 getRandomNonce(unsigned int nBits, uint256 oldNonce) {
+    static uint256 share_randomNonce;
+    static boost::shared_mutex rwmutex;
+
+    bool bChange = false;
+    {
+        boost::shared_lock<boost::shared_mutex> rlock(rwmutex);
+        if (0 == share_randomNonce || oldNonce == share_randomNonce) {
+            bChange = true;
+        }
+    }
+    
+    if (bChange) {
+        boost::unique_lock<boost::shared_mutex> wlock(rwmutex);
+        if (0 == share_randomNonce || oldNonce == share_randomNonce) {
+            if (nBits + 8 <= 48) {
+                share_randomNonce = (uint64)random_uint32_t();
+            } else if ((nBits + 8 > 48) && (nBits + 8 <= 80)) {
+                share_randomNonce = random_uint64_t();
+            } else {
+                share_randomNonce = GetRandHash();
+            }
+        }
+    }
+
+    return share_randomNonce;
+}
+
+void static AbcmintMiner(CWallet *pwallet, int deviceID, int threadID, int threadCount)
 {
-    printf("AbcmintMiner started\n");
+    //printf("AbcmintMiner started deviceID=%d, threadID=%d, threadCount=%d\n", deviceID, threadID, threadCount);
     SetThreadPriority(THREAD_PRIORITY_LOWEST);
     RenameThread("abcmint-miner");
+
+#ifdef USE_GPU
+	SetDevice(deviceID);
+#endif
 
     // Each thread has its own key and counter
     CReserveKey reservekey(pwallet);
     unsigned int nExtraNonce = 0;
+    uint256 randomNonce = 0;
 
     try { while(true) {
-        while (vNodes.empty())
+        while (vNodes.empty()) {
+            boost::this_thread::interruption_point();
             MilliSleep(1000);
-
+        }
         //
         // Create new block
         //
@@ -2382,14 +2724,15 @@ void static AbcmintMiner(CWallet *pwallet)
         //
         // Search
         //
-        uint256 randomNonce = 0;
+        /*uint256 randomNonce = 0;
         if (pblock->nBits + 8 <= 48) {
             randomNonce = (uint64)random_uint32_t();
         } else if ((pblock->nBits + 8 > 48) && (pblock->nBits + 8 <= 80)) {
             randomNonce = random_uint64_t();
         } else {
             randomNonce = GetRandHash();
-        }
+        }*/
+        randomNonce = getRandomNonce(pblock->nBits, randomNonce);
 
         int64 nStart = GetTime();
         uint256 tempHash = pblock->hashPrevBlock ^ pblock->hashMerkleRoot;
@@ -2400,16 +2743,12 @@ void static AbcmintMiner(CWallet *pwallet)
 		} else {
             prevblockhash = pindexPrev->GetBlockHash();
 		}
-
         while(true)
         {
-            uint256 nNonceFound;
-
             // Solve the multivariable quadratic polynomial equations.
-            nNonceFound = SerchSolution(seedHash, pblock->nBits, randomNonce,pindexPrev);
-
+            uint256 nNonceFound = SerchSolution(seedHash, pblock->nBits, randomNonce, pindexPrev, threadID, threadCount);
             // Check if something found
-            if (nNonceFound !=  -1)
+            if (nNonceFound !=  uint256("0xffffffffffffffffffffffffffffffff"))
             {
                 if (CheckSolution(seedHash, pblock->nBits, prevblockhash, pblock->nVersion, nNonceFound))
                 {
@@ -2438,7 +2777,7 @@ void static AbcmintMiner(CWallet *pwallet)
     catch (boost::thread_interrupted)
     {
         printf("AbcmintMiner terminated\n");
-        throw;
+        //throw;
     }
 }
 
@@ -2446,23 +2785,51 @@ void GenerateAbcmints(bool fGenerate, CWallet* pwallet)
 {
     static boost::thread_group* minerThreads = NULL;
 
-    int nThreads = GetArg("-genproclimit", -1);
-    if (nThreads < 0)
-        nThreads = boost::thread::hardware_concurrency();
-
-    if (minerThreads != NULL)
-    {
+    if (minerThreads != NULL) {
+        if (fGenerate) {
+            return;
+        }
+        
         minerThreads->interrupt_all();
+        minerThreads->join_all();
         delete minerThreads;
         minerThreads = NULL;
     }
 
-    if (nThreads == 0 || !fGenerate)
+    int nThreads = GetArg("-genproclimit", -1);
+    if (!fGenerate || 0 == nThreads) {
         return;
+    }
+
+    int tmpMultiple = 1;
+#ifdef USE_GPU
+    int deviceCount = GetDeviceCount();
+    if (nThreads < 0) {
+        nThreads = boost::thread::hardware_concurrency();
+    }
+    if (nThreads < deviceCount) {
+        nThreads = deviceCount;
+    }
+
+    if (deviceCount <= 0 || nThreads <= 0) {
+        return;
+    }
+
+    tmpMultiple = nThreads / deviceCount;
+    nThreads = tmpMultiple * deviceCount;
+
+    printf("    nThreads=%d, deviceCount=%d\n", nThreads, deviceCount);
+#else
+    if (nThreads < 0)
+        nThreads = boost::thread::hardware_concurrency();
+    
+    if (0 == nThreads) {
+        nThreads = 1;
+    }
+#endif
 
     minerThreads = new boost::thread_group();
-    for (int i = 0; i < nThreads; i++)
-        minerThreads->create_thread(boost::bind(&AbcmintMiner, pwallet));
+    for (int i = 0; i < nThreads; i++) {
+        minerThreads->create_thread(boost::bind(&AbcmintMiner, pwallet, i/tmpMultiple, i, nThreads));
+    }
 }
-
-

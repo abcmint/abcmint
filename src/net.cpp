@@ -16,6 +16,9 @@
 
 #ifdef WIN32
 #include <string.h>
+#include <mstcpip.h>
+#else
+#include <netinet/tcp.h>
 #endif
 
 #ifdef USE_UPNP
@@ -192,7 +195,7 @@ bool RecvLine(SOCKET hSocket, string& strLine)
             if (nBytes == 0)
             {
                 // socket closed
-                printf("socket closed\n");
+                printf("socket closed 1\n");
                 return false;
             }
             else
@@ -495,9 +498,9 @@ CNode* ConnectNode(CAddress addrConnect, const char *pszDest)
 
 
     /// debug print
-    printf("trying connection %s lastseen=%.1fhrs\n",
+    /*printf("trying connection %s lastseen=%.1fhrs\n",
         pszDest ? pszDest : addrConnect.ToString().c_str(),
-        pszDest ? 0 : (double)(GetAdjustedTime() - addrConnect.nTime)/3600.0);
+        pszDest ? 0 : (double)(GetAdjustedTime() - addrConnect.nTime)/3600.0);*/
 
     // Connect
     SOCKET hSocket;
@@ -568,7 +571,8 @@ void CNode::PushVersion()
     CAddress addrYou = (addr.IsRoutable() && !IsProxy(addr) ? addr : CAddress(CService("0.0.0.0",0)));
     CAddress addrMe = GetLocalAddress(&addr);
     getRandBytes((unsigned char*)&nLocalHostNonce, sizeof(nLocalHostNonce));
-    printf("send version message: version %d, blocks=%d, us=%s, them=%s, peer=%s\n", PROTOCOL_VERSION, nBestHeight, addrMe.ToString().c_str(), addrYou.ToString().c_str(), addr.ToString().c_str());
+    //printf("send version message: version %d, blocks=%d, us=%s, them=%s, peer=%s\n", PROTOCOL_VERSION, nBestHeight, addrMe.ToString().c_str(), addrYou.ToString().c_str(), addr.ToString().c_str());
+    printf("    send version message: PROTOCOL_VERSION=%d, nLocalServices=%lld, nTime=%lld, addrYou=%s, addrMe=%s, nLocalHostNonce=%lld, client=%s, nBestHeight=%d\n", PROTOCOL_VERSION, nLocalServices, nTime, addrYou.ToString().c_str(), addrMe.ToString().c_str(), nLocalHostNonce, FormatSubVersion(CLIENT_NAME, CLIENT_VERSION, std::vector<string>()).c_str(), nBestHeight);
     PushMessage("version", PROTOCOL_VERSION, nLocalServices, nTime, addrYou, addrMe,
                 nLocalHostNonce, FormatSubVersion(CLIENT_NAME, CLIENT_VERSION, std::vector<string>()), nBestHeight);
 }
@@ -734,6 +738,7 @@ void SocketSendData(CNode *pnode)
     while (it != pnode->vSendMsg.end()) {
         const CSerializeData &data = *it;
         assert(data.size() > pnode->nSendOffset);
+
         int nBytes = send(pnode->hSocket, &data[pnode->nSendOffset], data.size() - pnode->nSendOffset, MSG_NOSIGNAL | MSG_DONTWAIT);
         if (nBytes > 0) {
             pnode->nLastSend = GetTime();
@@ -1021,7 +1026,7 @@ void ThreadSocketHandler()
                         {
                             // socket closed gracefully
                             if (!pnode->fDisconnect)
-                                printf("socket closed\n");
+                                printf("socket closed 2\n");
                             pnode->CloseSocketDisconnect();
                         }
                         else if (nBytes < 0)
@@ -1711,7 +1716,7 @@ void static ProcessGetData(CNode* pfrom)
     }
 }
 
-CMedianFilter<int> cPeerBlockCounts(8, 0); // Amount of blocks that other nodes claim to have
+CMedianFilter<int> cPeerBlockCounts(8); // Amount of blocks that other nodes claim to have
 
 // Return maximum amount of blocks that other nodes claim to have
 int GetNumBlocksOfPeers()
@@ -1746,6 +1751,14 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         CAddress addrFrom;
         uint64 nNonce = 1;
         vRecv >> pfrom->nVersion >> pfrom->nServices >> nTime >> addrMe;
+
+        if (nBestHeight > RAINBOWFORkHEIGHT + 20) {
+            if (pfrom->nVersion < PROTOCOL_MIN_VERSION) {
+                pfrom->Misbehaving(100);
+                return false;
+            }
+        }
+
         if (!vRecv.empty())
             vRecv >> addrFrom >> nNonce;
 
@@ -1819,7 +1832,13 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 
         printf("receive version message: %s: version %d, blocks=%d, us=%s, them=%s, peer=%s\n", pfrom->cleanSubVer.c_str(), pfrom->nVersion, pfrom->nStartingHeight, addrMe.ToString().c_str(), addrFrom.ToString().c_str(), pfrom->addr.ToString().c_str());
 
-        cPeerBlockCounts.input(pfrom->nStartingHeight);
+        int tempHeight = pfrom->nStartingHeight;
+        if (pfrom->nVersion < PROTOCOL_MIN_VERSION) {
+            if (tempHeight > RAINBOWFORkHEIGHT) {
+                tempHeight = RAINBOWFORkHEIGHT;
+            }
+        }
+        cPeerBlockCounts.input(tempHeight);
     }
 
 
@@ -2076,14 +2095,14 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
                      ++mi)
                 {
                     const uint256& orphanHash = *mi;
-                    CTransaction& orphanTx = mapOrphanTransactions[orphanHash];
+                    const CTransaction& orphanTx = mapOrphanTransactions[orphanHash];
                     bool fMissingInputs2 = false;
                     // Use a dummy CValidationState so someone can't setup nodes to counter-DoS based on orphan
                     // resolution (that is, feeding people an invalid transaction based on LegitTxX in order to get
                     // anyone relaying LegitTxX banned)
                     CValidationState stateDummy;
 
-                    if (orphanTx.AcceptToMemoryPool(stateDummy, true, true, &fMissingInputs2))
+                    if (tx.AcceptToMemoryPool(stateDummy, true, true, &fMissingInputs2))
                     {
                         printf("   accepted orphan tx %s\n", orphanHash.ToString().c_str());
                         RelayTransaction(orphanTx, orphanHash);
@@ -2409,8 +2428,9 @@ bool SendMessages(CNode* pto, bool fSendTrickle)
     TRY_LOCK(cs_main, lockMain);
     if (lockMain) {
         // Don't send anything until we get their version message
-        if (pto->nVersion == 0)
+        if (pto->nVersion == 0) {
             return true;
+        }
 
         // Keep-alive ping. We send a nonce of zero because we don't use it anywhere
         // right now.
@@ -2716,6 +2736,26 @@ bool BindListenPort(const CService &addrBind, string& strError)
         setsockopt(hListenSocket, IPPROTO_IPV6, nParameterId, (const char*)&nProtLevel, sizeof(int));
 #endif
     }
+#endif
+
+    int keep_alive = 1;
+    setsockopt(hListenSocket, SOL_SOCKET, SO_KEEPALIVE, (const void *)&keep_alive, sizeof(keep_alive));
+#ifdef WIN32
+    struct tcp_keepalive in_keep_alive = {0};
+    struct tcp_keepalive out_keep_alive = {0};
+    unsigned long ul_bytes_return = 0;
+    in_keep_alive.onoff = 1;
+    in_keep_alive.keepaliveinterval = 20000;
+    in_keep_alive.keepalivetime = 60000;
+    WSAIoctl(hListenSocket, SIO_KEEPALIVE_VALS, (LPVOID)&in_keep_alive, sizeof(struct tcp_keepalive),
+        (LPVOID)&out_keep_alive, sizeof(struct tcp_keepalive), &ul_bytes_return, NULL, NULL);
+#else
+    int idel = 60;
+    int interval = 20;
+    int cnt = 3;
+    setsockopt(hListenSocket, SOL_TCP, TCP_KEEPIDLE, (const void *)&idel, sizeof(idel));
+    setsockopt(hListenSocket, SOL_TCP, TCP_KEEPINTVL, (const void *)&interval, sizeof(interval));
+    setsockopt(hListenSocket, SOL_TCP, TCP_KEEPCNT, (const void *)&cnt, sizeof(cnt));
 #endif
 
     if (::bind(hListenSocket, (struct sockaddr*)&sockaddr, len) == SOCKET_ERROR)

@@ -396,7 +396,7 @@ public:
         assert(ssSend.size() == 0);
         ssSend << CMessageHeader(pszCommand, 0);
         if (fDebug)
-            printf("sending: %s ", pszCommand);
+            printf("sending: %s ", addrName.c_str(), pszCommand);
     }
 
     // TODO: Document the precondition of this function.  Is cs_vSend locked?

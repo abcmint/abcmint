@@ -8,7 +8,7 @@
 #include "key.h"
 #include "serialize.h"
 
-
+class CBlockIndex;
 
 static const unsigned int RAINBOW_PUBLIC_KEY_POS_SIZE         = 8;
 static const unsigned int RAINBOW_PUBLIC_KEY_REUSED_SIZE      = 4;
@@ -95,11 +95,13 @@ public:
     }
 };
 
+bool FindPubKeyPos(std::string& pubKeyIn, CDiskPubKeyPos& pubKeyPos, bool ignoreMaturity, CBlockIndex* pIndexStart);
+
 bool GetPubKeyByPos(CDiskPubKeyPos pos, CPubKey& pubKey);
 
 bool UpdatePubKeyPos(CPubKey& pubKey, const std::string& address);
 
-void SearchPubKeyPos(bool fScan);
+void SearchPubKeyPos(boost::thread_group& threadGroup);
 
 #endif
 

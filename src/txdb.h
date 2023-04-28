@@ -50,4 +50,14 @@ public:
     bool LoadBlockIndexGuts();
 };
 
+class CPublicKeyPosDB : public CLevelDB
+{
+public:
+    CPublicKeyPosDB(size_t nCacheSize, bool fMemory = false, bool fWipe = false);
+
+    bool WritePublicKeyPos(const std::string& address, const CDiskPubKeyPos& entity);
+    bool ReadPublicKeyPos(const std::string& address, CDiskPubKeyPos& entity);
+    bool DeletePublicKeyPos(const std::string& address);
+};
+
 #endif // ABCMINT_TXDB_LEVELDB_H

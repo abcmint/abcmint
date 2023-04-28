@@ -9,7 +9,6 @@
 #include <vector>
 
 #include <boost/foreach.hpp>
-#include <boost/variant.hpp>
 
 #include "keystore.h"
 #include "util.h"
@@ -17,7 +16,7 @@
 
 class CCoins;
 class CTransaction;
-static const unsigned int MAX_SCRIPT_ELEMENT_SIZE = 512*1024 ; // bytes
+static const unsigned int MAX_SCRIPT_ELEMENT_SIZE = 512*1024 * 7 ; // bytes
 
 /** Signature hash types/flags */
 enum
@@ -47,20 +46,6 @@ enum txnouttype
     TX_SCRIPTHASH,
     TX_MULTISIG,
 };
-
-class CNoDestination {
-public:
-    friend bool operator==(const CNoDestination &a, const CNoDestination &b) { return true; }
-    friend bool operator<(const CNoDestination &a, const CNoDestination &b) { return true; }
-};
-
-/** A txout script template with a specific destination. It is either:
- *  * CNoDestination: no destination set
- *  * CKeyID: TX_PUBKEYHASH destination
- *  * CScriptID: TX_SCRIPTHASH destination
- *  A CTxDestination is the internal data type encoded in a CAbcmintAddress
- */
-typedef boost::variant<CNoDestination, CKeyID, CScriptID> CTxDestination;
 
 const char* GetTxnOutputType(txnouttype t);
 
@@ -488,7 +473,7 @@ public:
 
     CScript& operator<<(const CPubKey& key)
     {
-        std::vector<unsigned char> vchKey = key.Raw();
+        std::vector<unsigned char> vchKey = key.vchPubKey;
         return (*this) << vchKey;
     }
 
@@ -723,6 +708,8 @@ public:
     }
 };
 
+unsigned int getInScriptCompactSize(unsigned int nSize);
+
 /** Compact serializer for scripts.
  *
  *  It detects common cases and encodes them much more efficiently.
@@ -752,13 +739,13 @@ protected:
     // form).
     bool IsToKeyID(CKeyID &hash) const;
     bool IsToScriptID(CScriptID &hash) const;
-    bool IsToPubKey(std::vector<unsigned char> &pubkey) const;
 
     bool Compress(std::vector<unsigned char> &out) const;
-    unsigned int GetSpecialSize(unsigned int nSize) const;
     bool Decompress(unsigned int nSize, const std::vector<unsigned char> &out);
 public:
     CScriptCompressor(CScript &scriptIn) : script(scriptIn) { }
+
+    bool IsToPubKey(std::vector<unsigned char> &pubkey) const;
 
     unsigned int GetSerializeSize(int nType, int nVersion) const {
         std::vector<unsigned char> compr;
@@ -785,8 +772,23 @@ public:
         unsigned int nSize = 0;
         s >> VARINT(nSize);
         if (nSize < nSpecialScripts) {
-            std::vector<unsigned char> vch(GetSpecialSize(nSize), 0x00);
-            s >> REF(CFlatData(&vch[0], &vch[vch.size()]));
+            uint32_t specialSize = HASH_LEN_BYTES;
+            std::vector<unsigned char> tmp(6, 0x00);
+            s >> REF(CFlatData(&tmp[0], &tmp[tmp.size()]));
+            
+            if (nSize > 1) {
+                specialSize = get_publicKey_size(tmp.data());
+            }
+
+            std::vector<unsigned char> vch(specialSize, 0x00);
+            vch[0] = tmp[0];
+            vch[1] = tmp[1];
+            vch[2] = tmp[2];
+            vch[3] = tmp[3];
+            vch[4] = tmp[4];
+            vch[5] = tmp[5];
+
+            s >> REF(CFlatData(&vch[6], &vch[vch.size()]));
             Decompress(nSize, vch);
             return;
         }

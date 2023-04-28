@@ -139,15 +139,19 @@ bool CAlert::RelayTo(CNode* pnode) const
     return false;
 }
 
-bool CAlert::CheckSignature() const
+bool CAlert::CheckSignature()
 {
-    CKey key;
-	key.MakeNewKey();
-   // if (!key.SetPubKey(ParseHex(fTestNet ? pszTestKey : pszMainKey)))
-    //    return error("CAlert::CheckSignature() : SetPubKey failed");
-    if (!key.pubKey.Verify(Hash(vchMsg.begin(), vchMsg.end()), vchSig))
-        return error("CAlert::CheckSignature() : verify signature failed");
+    uint32_t config_value = 0;
+    get_choised_info(NULL, NULL, NULL, &config_value);
 
+    CKey key;
+	key.MakeNewKey(config_value); 
+
+    std::vector<unsigned char> tmpHash = HashPro(config_value, vchMsg);
+    if (!key.GetPubKey().Verify(config_value, tmpHash.data(), tmpHash.size(), vchSig.data(), vchSig.size(), false)) {
+        return error("CAlert::CheckSignature() : verify signature failed");
+    }
+    
     // Now unserialize the data
     CDataStream sMsg(vchMsg, SER_NETWORK, PROTOCOL_VERSION);
     sMsg >> *(CUnsignedAlert*)this;

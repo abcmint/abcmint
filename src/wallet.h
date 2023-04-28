@@ -64,7 +64,7 @@ public:
 class CWallet : public CCryptoKeyStore
 {
 private:
-    bool SelectCoins(int64 nTargetValue, std::set<std::pair<const CWalletTx*,unsigned int> >& setCoinsRet, int64& nValueRet) const;
+    bool SelectCoins(int64 nTargetValue, std::set<std::pair<const CWalletTx*,unsigned int> >& setCoinsRet, int64& nValueRet, const std::string &strAddress="") const;
 
     CWalletDB *pwalletdbEncryption;
 
@@ -114,10 +114,11 @@ public:
     std::map<CTxDestination, std::string> mapAddressBook;
 
     CPubKey vchDefaultKey;
+    std::string vchMinerAddress;
 
     std::set<COutPoint> setLockedCoins;
 
-    void AvailableCoins(std::vector<COutput>& vCoins, bool fOnlyConfirmed=true) const;
+    void AvailableCoins(std::vector<COutput>& vCoins, bool fOnlyConfirmed=true, const std::string &strAddress="") const;
     bool SelectCoinsMinConf(int64 nTargetValue, int nConfMine, int nConfTheirs, std::vector<COutput> vCoins, std::set<std::pair<const CWalletTx*,unsigned int> >& setCoinsRet, int64& nValueRet) const;
     bool IsLockedCoin(uint256 hash, unsigned int n) const;
     void LockCoin(COutPoint& output);
@@ -127,7 +128,7 @@ public:
 
     // keystore implementation
     // Generate a new key
-    CPubKey GenerateNewKey();
+    CPubKey GenerateNewKey(unsigned int config_value);
     // Adds a key to the store, and saves it to disk.
     bool AddKey(const CKey& key);
     bool AddPubKeyPos(const std::string& address,        const CDiskPubKeyPos& pos);
@@ -169,11 +170,11 @@ public:
     int ScanForWalletTransactions(CBlockIndex* pindexStart, bool fUpdate = false);
     void ReacceptWalletTransactions();
     void ResendWalletTransactions();
-    int64 GetBalance() const;
-    int64 GetUnconfirmedBalance() const;
-    int64 GetImmatureBalance() const;
-    bool CreateTransaction(const std::vector<std::pair<CScript, int64> >& vecSend,
-                           CWalletTx& wtxNew, CReserveKey& reservekey, int64& nFeeRet, std::string& strFailReason);
+    int64 GetBalance(const string& strAddress="") const;
+    int64 GetUnconfirmedBalance(const string& strAddress="") const;
+    int64 GetImmatureBalance(const string& strAddress="") const;
+    bool CreateTransaction(const std::vector<std::pair<CScript, int64> >& vecSend, CWalletTx& wtxNew, CReserveKey& reservekey,
+							int64& nFeeRet, std::string& strFailReason, const std::string &strAddress="");
     bool CreateTransaction(CScript scriptPubKey, int64 nValue,
                            CWalletTx& wtxNew, CReserveKey& reservekey, int64& nFeeRet, std::string& strFailReason);
     bool CommitTransaction(CWalletTx& wtxNew, CReserveKey& reservekey);
@@ -186,7 +187,7 @@ public:
     void ReserveKeyFromKeyPool(int64& nIndex, CKeyPool& keypool);
     void KeepKey(int64 nIndex);
     void ReturnKey(int64 nIndex);
-    bool GetKeyFromPool(CPubKey &key, bool fAllowReuse=true);
+    bool GetKeyFromPool(CPubKey &key, unsigned int config_value, bool fAllowReuse=true);
     int64 GetOldestKeyPoolTime();
     void GetAllReserveKeys(std::set<CKeyID>& setAddress);
 
@@ -223,6 +224,7 @@ public:
     {
         return (GetDebit(tx) > 0);
     }
+
     int64 GetDebit(const CTransaction& tx) const
     {
         int64 nDebit = 0;
@@ -264,6 +266,7 @@ public:
 
     bool DelAddressBookName(const CTxDestination& address);
 
+    void RefreshAddressTable();
     void UpdatedTransaction(const uint256 &hashTx);
 
     void PrintWallet(const CBlock& block);
@@ -287,6 +290,8 @@ public:
 
     bool SetDefaultKey(const CPubKey &vchPubKey);
 
+    bool SetMinerAddress(const std::string &strAddr);
+
     // signify that a particular wallet feature is now used. this may change nWalletVersion and nWalletMaxVersion if those are lower
     bool SetMinVersion(enum WalletFeature, CWalletDB* pwalletdbIn = NULL, bool fExplicit = false);
 
@@ -305,6 +310,8 @@ public:
      * @note called with lock cs_wallet held.
      */
     boost::signals2::signal<void (CWallet *wallet, const uint256 &hashTx, ChangeType status)> NotifyTransactionChanged;
+
+    boost::signals2::signal<void (CWallet *wallet)> NotifyRefreshAddressTable;
 };
 
 /** A key allocated from the key pool. */
@@ -328,6 +335,7 @@ public:
 
     void ReturnKey();
     bool GetReservedKey(CPubKey &pubkey);
+    bool GetMinerAddress(CKeyID &keyId);
     void KeepKey();
 };
 
@@ -583,6 +591,37 @@ public:
         return 0;
     }
 
+    int64 GetImmatureCredit(const string& strAddress) const
+    {
+        if (strAddress.empty()) {
+            return 0;
+        }
+
+        if (IsCoinBase() && GetBlocksToMaturity() > 0 && IsInMainChain())
+        {
+            int64 nCredit = 0;
+            BOOST_FOREACH(const CTxOut& txout, vout)
+            {
+                CTxDestination addressId;
+                if (!ExtractDestination(txout.scriptPubKey, addressId) || !IsMine(*pwallet, addressId))
+                    continue;
+
+                if (CAbcmintAddress(addressId).ToString() != strAddress)
+                    continue;
+
+                nCredit += txout.nValue;
+                if (!MoneyRange(nCredit))
+                    throw std::runtime_error("CWallet::GetImmatureCredit() : value out of range");
+            }
+
+            return nCredit;
+        }
+
+        return 0;
+    }
+
+
+
     int64 GetAvailableCredit(bool fUseCache=true) const
     {
         // Must wait until coinbase is safely deep enough in the chain before valuing it
@@ -624,6 +663,8 @@ public:
 
     void GetAccountAmounts(const std::string& strAccount, int64& nReceived,
                            int64& nSent, int64& nFee) const;
+
+    int64 GetAddressAmounts(const std::string& strAddress) const;
 
     bool IsFromMe() const
     {

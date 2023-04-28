@@ -9,8 +9,11 @@
 #include "hash.h"
 #include "pqcrypto/pqcrypto.h"
 
-#ifndef WIN32
+#ifdef WIN32
+#include <mstcpip.h>
+#else
 #include <sys/fcntl.h>
+#include <netinet/tcp.h>
 #endif
 
 #include <boost/algorithm/string/case_conv.hpp> // for to_lower()
@@ -358,6 +361,26 @@ bool static ConnectSocketDirectly(const CService &addrConnect, SOCKET& hSocketRe
         return false;
     }
 
+    int keep_alive = 1;
+    setsockopt(hSocket, SOL_SOCKET, SO_KEEPALIVE, (const void *)&keep_alive, sizeof(keep_alive));
+#ifdef WIN32
+    struct tcp_keepalive in_keep_alive = {0};
+    struct tcp_keepalive out_keep_alive = {0};
+    unsigned long ul_bytes_return = 0;
+    in_keep_alive.onoff = 1;
+    in_keep_alive.keepaliveinterval = 20000;
+    in_keep_alive.keepalivetime = 60000;
+    WSAIoctl(hSocket, SIO_KEEPALIVE_VALS, (LPVOID)&in_keep_alive, sizeof(struct tcp_keepalive),
+        (LPVOID)&out_keep_alive, sizeof(struct tcp_keepalive), &ul_bytes_return, NULL, NULL);
+#else
+    int idel = 60;
+    int interval = 20;
+    int cnt = 3;
+    setsockopt(hSocket, SOL_TCP, TCP_KEEPIDLE, (const void *)&idel, sizeof(idel));
+    setsockopt(hSocket, SOL_TCP, TCP_KEEPINTVL, (const void *)&interval, sizeof(interval));
+    setsockopt(hSocket, SOL_TCP, TCP_KEEPCNT, (const void *)&cnt, sizeof(cnt));
+#endif
+
     if (connect(hSocket, (struct sockaddr*)&sockaddr, len) == SOCKET_ERROR)
     {
         // WSAEINVAL is here because some legacy version of winsock uses it
@@ -373,7 +396,7 @@ bool static ConnectSocketDirectly(const CService &addrConnect, SOCKET& hSocketRe
             int nRet = select(hSocket + 1, NULL, &fdset, NULL, &timeout);
             if (nRet == 0)
             {
-                printf("connection timeout\n");
+                //printf("connection timeout\n");
                 closesocket(hSocket);
                 return false;
             }

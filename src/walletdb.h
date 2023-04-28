@@ -116,6 +116,12 @@ public:
         return Write(std::string("defaultkey"), vchPubKey);
     }
 
+    bool WriteMinerAddress(const std::string& strAddr)
+    {
+        nWalletDBUpdated++;
+        return Write(std::string("mineraddress"), strAddr);
+    }
+
     bool ReadPool(int64 nPool, CKeyPool& keypool)
     {
         return Read(std::make_pair(std::string("pool"), nPool), keypool);

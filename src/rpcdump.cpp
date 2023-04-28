@@ -73,6 +73,9 @@ Value importkey(const Array& params, bool fHelp)
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid public key");
 
     key.SetPubKey(pubKey);
+    if (!key.IsValid()) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid private key or public key");
+    }
 
     CKeyID vchAddress = key.GetPubKey().GetID();
     {
@@ -122,6 +125,13 @@ Value dumpkey(const Array& params, bool fHelp)
     CPubKey pubKey;
     if (!pwalletMain->GetPubKey(keyID, pubKey))
         throw JSONRPCError(RPC_WALLET_ERROR, "Address does not refer to a public key");
+
+    CKey key;
+    key.SetPrivKey(vchSecret);
+    key.SetPubKey(pubKey);
+    if (!key.IsValid()) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid private key or public key");
+    }
 
     CDiskPubKeyPos pos;
     if (pwalletMain->GetPubKeyPos(strAddress, pos))

@@ -18,6 +18,8 @@
 #include <boost/filesystem/fstream.hpp>
 #include <memory>
 
+#include "validationinterface.h"
+
 using namespace std;
 using namespace boost;
 
@@ -124,6 +126,12 @@ void static UpdatedTransaction(const uint256& hashTx)
 {
     BOOST_FOREACH(CWallet* pwallet, setpwalletRegistered)
         pwallet->UpdatedTransaction(hashTx);
+}
+
+void static RefreshAddressTable()
+{
+    BOOST_FOREACH(CWallet* pwallet, setpwalletRegistered)
+        pwallet->RefreshAddressTable();
 }
 
 // dump all wallets
@@ -268,6 +276,7 @@ bool CCoinsViewMemPool::HaveCoins(const uint256 &txid) {
 
 CCoinsViewCache *pcoinsTip = NULL;
 CBlockTreeDB *pblocktree = NULL;
+CPublicKeyPosDB *pPublicKeyPosDB = NULL;
 
 //////////////////////////////////////////////////////////////////////////////
 //
@@ -359,9 +368,16 @@ bool CTxOut::IsDust() const
 
 bool CTransaction::IsStandard(string& strReason) const
 {
-    if (nVersion > CTransaction::CURRENT_VERSION || nVersion < 1) {
-        strReason = "version";
-        return false;
+    if (nBestHeight > RAINBOWFORkHEIGHT + 20) {
+        if (nVersion != CTransaction::CURRENT_VERSION) {
+            strReason = "version";
+            return false;
+        }
+    } else {
+        if (nVersion != CTransaction::VERSION_BEFORE_FORK && nVersion != CTransaction::CURRENT_VERSION) {
+            strReason = "version";
+            return false;
+        }
     }
 
     if (!IsFinal()) {
@@ -384,7 +400,12 @@ bool CTransaction::IsStandard(string& strReason) const
         // Biggest 'standard' txin is a 3-signature 3-of-3 CHECKMULTISIG
         // pay-to-script-hash, which is 3 ~80-byte signatures, 3
         // ~65-byte public keys, plus a few script ops.
-        if (txin.scriptSig.size() > 500000) {
+        int maxScriptSigSize = 500000;
+        if (nVersion == CTransaction::CURRENT_VERSION) {
+            maxScriptSigSize = 500000 * 7;
+        }
+
+        if (txin.scriptSig.size() > maxScriptSigSize) {
             strReason = "scriptsig-size";
             return false;
         }
@@ -548,7 +569,7 @@ bool CTransaction::CheckTransaction(CValidationState &state) const
     if (vout.empty())
         return state.DoS(10, error("CTransaction::CheckTransaction() : vout empty"));
     // Size limits
-    if (::GetSerializeSize(*this, SER_NETWORK, PROTOCOL_VERSION) > MAX_BLOCK_SIZE)
+    if (::GetSerializeSize(*this, SER_NETWORK, PROTOCOL_VERSION) >= MAX_STANDARD_TX_SIZE)
         return state.DoS(100, error("CTransaction::CheckTransaction() : size limits failed"));
 
     // Check for negative or overflow output values
@@ -808,6 +829,8 @@ bool CTxMemPool::accept(CValidationState &state, CTransaction &tx, bool fCheckIn
         EraseFromWallets(ptxOld->GetHash());
     SyncWithWallets(hash, tx, NULL, true);
 
+    GetMainSignals().TransactionAddedToMempool(tx);
+
     return true;
 }
 
@@ -896,22 +919,26 @@ void CTxMemPool::queryHashes(std::vector<uint256>& vtxid)
 
 int CMerkleTx::GetDepthInMainChain(CBlockIndex* &pindexRet) const
 {
-    if (hashBlock == 0 || nIndex == -1)
+    if (hashBlock == 0 || nIndex == -1) {
         return 0;
+    }
 
     // Find the block it claims to be in
     map<uint256, CBlockIndex*>::iterator mi = mapBlockIndex.find(hashBlock);
-    if (mi == mapBlockIndex.end())
+    if (mi == mapBlockIndex.end()) {
         return 0;
+    }
     CBlockIndex* pindex = (*mi).second;
-    if (!pindex || !pindex->IsInMainChain())
+    if (!pindex || !pindex->IsInMainChain()) {
         return 0;
+    }
 
     // Make sure the merkle branch connects to this block
     if (!fMerkleVerified)
     {
-        if (CBlock::CheckMerkleBranch(GetHash(), vMerkleBranch, nIndex) != pindex->hashMerkleRoot)
+        if (CBlock::CheckMerkleBranch(GetHash(), vMerkleBranch, nIndex) != pindex->hashMerkleRoot) {
             return 0;
+        }
         fMerkleVerified = true;
     }
 
@@ -1075,7 +1102,7 @@ bool CBlock::ReadFromDisk(const CDiskBlockPos &pos)
     // Check the header
     uint256 tempHash = hashPrevBlock ^ hashMerkleRoot;
     uint256 seedHash = Hash(BEGIN(tempHash), END(tempHash));
-    if (!CheckProofOfWork(seedHash, nBits, hashPrevBlock, nVersion, nNonce))
+    if (!CheckProofOfWork(seedHash, nBits, hashPrevBlock,nVersion, nNonce))
         return error("CBlock::ReadFromDisk() : errors in block header");
 
     return true;
@@ -1087,7 +1114,7 @@ bool CBlockIndex::CheckIndex() const
     if (pprev) {
         uint256 tempHash = pprev->GetBlockHash() ^ hashMerkleRoot;
         uint256 seedHash = Hash(BEGIN(tempHash), END(tempHash));
-        return CheckProofOfWork(seedHash, nBits, pprev->GetBlockHash(), nVersion, nNonce);
+        return CheckProofOfWork(seedHash, nBits, pprev->GetBlockHash(),nVersion, nNonce);
     }
     else {
         uint256 initHash = 0;
@@ -1164,6 +1191,8 @@ bool ConnectBestBlock(CValidationState &state) {
         if (pindexNewBest == pindexBest || (pindexBest && pindexNewBest->nChainWork == pindexBest->nChainWork))
             return true; // nothing to do
 
+        CBlockIndex* starting_tip = pindexBest;
+
         // check ancestry
         CBlockIndex *pindexTest = pindexNewBest;
         std::vector<CBlockIndex*> vAttach;
@@ -1186,15 +1215,48 @@ bool ConnectBestBlock(CValidationState &state) {
 
             if (pindexTest->pprev == NULL || pindexTest->pnext != NULL) {
                 reverse(vAttach.begin(), vAttach.end());
+
                 BOOST_FOREACH(CBlockIndex *pindexSwitch, vAttach) {
+                    std::vector<CBlock> connectTrace;
+                    std::vector<CBlock> disconnectTrace;
                     boost::this_thread::interruption_point();
                     try {
-                        if (!SetBestChain(state, pindexSwitch))
+                        if (!SetBestChain(state, pindexSwitch, connectTrace, disconnectTrace))
                             return false;
+                        else {
+                            BOOST_FOREACH(CBlock &tempblock, disconnectTrace) {
+                                GetMainSignals().BlockDisconnected(&tempblock);
+                            }
+                            BOOST_FOREACH(CBlock &tempblock, connectTrace) {
+                                GetMainSignals().BlockConnected(&tempblock);
+                            }
+                        }
                     } catch(std::runtime_error &e) {
                         return state.Abort(_("System error: ") + e.what());
                     }
                 }
+
+                if (!vAttach.empty()) {
+                    CBlockIndex* pfork = starting_tip;
+                    CBlockIndex* plong = pindexBest;
+                    while (pfork && pfork != plong)
+                    {
+                        while (plong->nHeight > pfork->nHeight) {
+                            plong = plong->pprev;
+                            printf("plong=%p\n", plong);
+                            assert(plong != NULL);
+                        }
+                        if (pfork == plong)
+                            break;
+                        pfork = pfork->pprev;
+                        assert(pfork != NULL);
+                    }
+                    bool fIsInitialDownload = IsInitialBlockDownload();
+                    if (pfork != pindexBest) {
+                        GetMainSignals().UpdatedBlockTip(pindexBest, pfork, fIsInitialDownload);
+                    }
+                }
+
                 return true;
             }
             pindexTest = pindexTest->pprev;
@@ -1296,6 +1358,7 @@ bool CScriptCheck::operator()() const {
     const CScript &scriptSig = ptxTo->vin[nIn].scriptSig;
     if (!VerifyScript(scriptSig, scriptPubKey, *ptxTo, nIn, nFlags, nHashType))
         return error("CScriptCheck() : %s VerifyScript failed", ptxTo->GetHash().ToString().c_str());
+    
     return true;
 }
 
@@ -1535,9 +1598,9 @@ bool CBlock::ConnectBlock(CValidationState &state, CBlockIndex* pindex, CCoinsVi
     }
 
     unsigned int flags = SCRIPT_VERIFY_NOCACHE | SCRIPT_VERIFY_P2SH;
-    if (nVersion >= 3 &&
-        ((!fTestNet && CBlockIndex::IsSuperMajority(3, pindex->pprev, 750, 1000)) ||
-            (fTestNet && CBlockIndex::IsSuperMajority(3, pindex->pprev, 51, 100)))) {
+    if (nVersion >= BLOCK_VERSION3_BEFORE_FORK &&
+        ((!fTestNet && CBlockIndex::IsSuperMajority(BLOCK_VERSION3_BEFORE_FORK, pindex->pprev, 750, 1000)) ||
+            (fTestNet && CBlockIndex::IsSuperMajority(BLOCK_VERSION3_BEFORE_FORK, pindex->pprev, 51, 100)))) {
         flags |= SCRIPT_VERIFY_DERSIG;
     }
 
@@ -1636,7 +1699,74 @@ bool CBlock::ConnectBlock(CValidationState &state, CBlockIndex* pindex, CCoinsVi
     return true;
 }
 
-bool SetBestChain(CValidationState &state, CBlockIndex* pindexNew)
+bool SavePubKeyPos(CTransaction& tx, CBlockIndex* pBlockIndex) {
+    if(tx.IsCoinBase()){
+        printf("CoinBase tx,don't have public key to save!\n");
+        return true;
+    }
+
+    BOOST_FOREACH(CTxIn& txin, tx.vin) 
+    {
+        unsigned int min_byte_of_pk = 0;
+        unsigned int min_byte_of_sign = 0;
+        get_choised_info(&min_byte_of_pk, &min_byte_of_sign, NULL, NULL);
+        if(txin.scriptSig.size() >= min_byte_of_pk + min_byte_of_sign) {
+            CScript::const_iterator pc = txin.scriptSig.begin();
+            CScript::const_iterator pend = txin.scriptSig.end();
+            opcodetype opcode;
+            std::vector<unsigned char> vchPushValue;
+
+            while (pc < pend) {
+                vchPushValue.clear();
+                if(!txin.scriptSig.GetOp(pc, opcode, vchPushValue))
+                    continue;
+                
+                if(0 <= opcode && opcode <= OP_PUSHDATA4 && publicKey_check_len(vchPushValue.size())) {
+                    CPubKey pubkey(vchPushValue);
+                    if(!pubkey.IsValid())
+                        continue;
+                    
+                    CAbcmintAddress address(pubkey.GetID());
+                    std::string addressStr = address.ToString();
+                    CDiskPubKeyPos pos;
+                    std::string pubkeyHex = HexStr(vchPushValue);
+                    bool ret = FindPubKeyPos(pubkeyHex, pos, true, pBlockIndex);
+                    if(ret){
+                        printf("PubKeyPos for %s is %s\n",addressStr.c_str(), HexStr(pos.ToVector()).c_str());
+                        CDiskPubKeyPos oldPos;
+                        bool foundOld = false;
+                        if(pPublicKeyPosDB->ReadPublicKeyPos(addressStr, oldPos))
+                        {
+                            CPubKey tmpPubKey;
+                            if(GetPubKeyByPos(oldPos, tmpPubKey)) {
+                                if (tmpPubKey == pubkey) {
+                                    foundOld = true;
+                                    printf("Old position is valid, skip\n");
+                                } else {
+                                    printf("The public key corresponding to the position is different , delete it!\n");
+                                    pPublicKeyPosDB->DeletePublicKeyPos(addressStr);
+                                }
+                            } else{
+                                printf("Can't get public key by position, delete it!\n");
+                                pPublicKeyPosDB->DeletePublicKeyPos(addressStr);
+                            }
+                        }
+
+                        if(!foundOld)
+                        {
+                            printf("write public key position!\n");
+                            if(pPublicKeyPosDB->WritePublicKeyPos(addressStr, pos))
+                                return true;
+                        }
+                    }
+                }       
+            }
+        }
+    }
+    return false;
+}
+
+bool SetBestChain(CValidationState &state, CBlockIndex* pindexNew, std::vector<CBlock> &connectTrace, std::vector<CBlock> &disconnectTrace)
 {
     // All modifications to the coin state will be done in this cache.
     // Only when all have succeeded, we push it to pcoinsTip.
@@ -1691,6 +1821,8 @@ bool SetBestChain(CValidationState &state, CBlockIndex* pindexNew)
         BOOST_REVERSE_FOREACH(const CTransaction& tx, block.vtx)
             if (!tx.IsCoinBase() && pindex->nHeight > Checkpoints::GetTotalBlocksEstimate())
                 vResurrect.push_front(tx);
+
+        disconnectTrace.push_back(block);
     }
 
     // Connect longer branch
@@ -1713,6 +1845,8 @@ bool SetBestChain(CValidationState &state, CBlockIndex* pindexNew)
         // Queue memory transactions to delete
         BOOST_FOREACH(const CTransaction& tx, block.vtx)
             vDelete.push_back(tx);
+
+        connectTrace.push_back(block);
     }
 
     // Flush changes to global coin state
@@ -1764,6 +1898,8 @@ bool SetBestChain(CValidationState &state, CBlockIndex* pindexNew)
     BOOST_FOREACH(CTransaction& tx, vDelete) {
         mempool.remove(tx);
         mempool.removeConflicts(tx);
+
+        SavePubKeyPos(tx, pindexNew);
     }
 
     // Update best block in wallet (so we can detect restored wallets)
@@ -1785,6 +1921,13 @@ bool SetBestChain(CValidationState &state, CBlockIndex* pindexNew)
       hashBestChain.ToString().c_str(), nBestHeight, nBestChainWork, (unsigned long)pindexNew->nChainTx,
       DateTimeStrFormat("%Y-%m-%d %H:%M:%S", pindexBest->GetBlockTime()).c_str(),
       Checkpoints::GuessVerificationProgress(pindexBest));
+
+    BOOST_FOREACH(CTransaction& tx, vDelete) {
+        if (tx.IsCoinBase()) {
+            UpdatedTransaction(tx.GetHash());    
+        }
+    }
+    RefreshAddressTable();
 
     // Check the version of the last 100 blocks to see if we need to upgrade:
     if (!fIsInitialDownload)
@@ -1826,14 +1969,22 @@ bool CBlock::AddToBlockIndex(CValidationState &state, const CDiskBlockPos &pos)
     // Construct new block index object
     CBlockIndex* pindexNew = new CBlockIndex(*this);
     assert(pindexNew);
-    map<uint256, CBlockIndex*>::iterator mi = mapBlockIndex.insert(make_pair(hash, pindexNew)).first;
-    pindexNew->phashBlock = &((*mi).first);
-    map<uint256, CBlockIndex*>::iterator miPrev = mapBlockIndex.find(hashPrevBlock);
-    if (miPrev != mapBlockIndex.end())
-    {
+
+    if (hash != hashGenesisBlock) {
+        map<uint256, CBlockIndex*>::iterator miPrev = mapBlockIndex.find(hashPrevBlock);
+        if (miPrev == mapBlockIndex.end()) {
+            return state.Invalid(error("AddToBlockIndex() : block:%s, hashPrevBlock:%s not found", hash.ToString().c_str(), hashPrevBlock.ToString().c_str()));
+        }
         pindexNew->pprev = (*miPrev).second;
         pindexNew->nHeight = pindexNew->pprev->nHeight + 1;
+        if (pindexNew->nHeight < RAINBOWFORkHEIGHT && pindexNew->nVersion >= BLOCK_CURRENT_VERSION) {
+            return state.Invalid(error("AddToBlockIndex() : block:%s, nVersion too large", hash.ToString().c_str()));
+        }
+        if (pindexNew->nHeight >= RAINBOWFORkHEIGHT && pindexNew->nVersion < BLOCK_CURRENT_VERSION) {
+            return state.Invalid(error("AddToBlockIndex() : block:%s, nVersion too small", hash.ToString().c_str()));
+        }
     }
+
     pindexNew->nTx = vtx.size();
     pindexNew->nChainWork = (pindexNew->pprev ? pindexNew->pprev->nChainWork : 0) + pindexNew->GetBlockWork();
     pindexNew->nChainTx = (pindexNew->pprev ? pindexNew->pprev->nChainTx : 0) + pindexNew->nTx;
@@ -1841,6 +1992,10 @@ bool CBlock::AddToBlockIndex(CValidationState &state, const CDiskBlockPos &pos)
     pindexNew->nDataPos = pos.nPos;
     pindexNew->nUndoPos = 0;
     pindexNew->nStatus = BLOCK_VALID_TRANSACTIONS | BLOCK_HAVE_DATA;
+
+    map<uint256, CBlockIndex*>::iterator mi = mapBlockIndex.insert(make_pair(hash, pindexNew)).first;
+    pindexNew->phashBlock = &((*mi).first);
+
     setBlockIndexValid.insert(pindexNew);
 
     if (!pblocktree->WriteBlockIndex(CDiskBlockIndex(pindexNew)))
@@ -1967,14 +2122,18 @@ bool CBlock::CheckBlock(CValidationState &state, bool fCheckPOW, bool fCheckMerk
     // that can be verified before saving an orphan block.
 
     // Size limits
-    if (vtx.empty() || vtx.size() > MAX_BLOCK_SIZE || ::GetSerializeSize(*this, SER_NETWORK, PROTOCOL_VERSION) > MAX_BLOCK_SIZE)
+    unsigned int MaxBlockSize = MAX_BLOCK_SIZE;
+    if (nVersion < BLOCK_CURRENT_VERSION) {
+        MaxBlockSize = MAX_BLOCK_SIZE_BEFORE_FORK;
+    }
+    if (vtx.empty() || vtx.size() > MaxBlockSize || ::GetSerializeSize(*this, SER_NETWORK, PROTOCOL_VERSION) > MaxBlockSize)
         return state.DoS(100, error("CheckBlock() : size limits failed"));
 
     // Check proof of work matches claimed amount
 	uint256 tempHash = hashPrevBlock ^ hashMerkleRoot;
 	uint256 seedHash = Hash(BEGIN(tempHash), END(tempHash));
-    if (fCheckPOW && !CheckProofOfWork(seedHash, nBits, hashPrevBlock, nVersion, nNonce))
-        return state.DoS(50, error("CheckBlock() : proof of work failed"));
+    if (fCheckPOW && !CheckProofOfWork(seedHash, nBits, hashPrevBlock,nVersion, nNonce))
+        return state.DoS(100, error("CheckBlock() : proof of work failed"));
 
     // Check timestamp
     if (GetBlockTime() > GetAdjustedTime() + 2 * 60 * 60)
@@ -2052,29 +2211,39 @@ bool CBlock::AcceptBlock(CValidationState &state, CDiskBlockPos *dbp)
                 return state.DoS(10, error("AcceptBlock() : contains a non-final transaction"));
 
         // Reject block.nVersion=1 blocks when 95% (75% on testnet) of the network has upgraded:
-        if (nVersion < 2)
+        if (nVersion < BLOCK_VERSION2_BEFORE_FORK)
         {
-            if ((!fTestNet && CBlockIndex::IsSuperMajority(2, pindexPrev, 950, 1000)) ||
-                (fTestNet && CBlockIndex::IsSuperMajority(2, pindexPrev, 75, 100)))
+            if ((!fTestNet && CBlockIndex::IsSuperMajority(BLOCK_VERSION2_BEFORE_FORK, pindexPrev, 950, 1000)) ||
+                (fTestNet && CBlockIndex::IsSuperMajority(BLOCK_VERSION2_BEFORE_FORK, pindexPrev, 75, 100)))
             {
                 return state.Invalid(error("AcceptBlock() : rejected nVersion=1 block"));
             }
         }
         // Reject block.nVersion=2 blocks when 95% (75% on testnet) of the network has upgraded:
-        if (nVersion < 3)
+        if (nVersion < BLOCK_VERSION3_BEFORE_FORK)
         {
-            if ((!fTestNet && CBlockIndex::IsSuperMajority(3, pindexPrev, 950, 1000)) ||
-                (fTestNet && CBlockIndex::IsSuperMajority(3, pindexPrev, 75, 100)))
+            if ((!fTestNet && CBlockIndex::IsSuperMajority(BLOCK_VERSION3_BEFORE_FORK, pindexPrev, 950, 1000)) ||
+                (fTestNet && CBlockIndex::IsSuperMajority(BLOCK_VERSION3_BEFORE_FORK, pindexPrev, 75, 100)))
             {
                 return state.Invalid(error("AcceptBlock() : rejected nVersion=2 block"));
             }
         }
+
+        if (nVersion < BLOCK_CURRENT_VERSION)
+        {
+            if ((!fTestNet && CBlockIndex::IsSuperMajority(BLOCK_CURRENT_VERSION, pindexPrev, 950, 1000)) ||
+                (fTestNet && CBlockIndex::IsSuperMajority(BLOCK_CURRENT_VERSION, pindexPrev, 75, 100)))
+            {
+                return state.Invalid(error("AcceptBlock() : rejected nVersion<101 block"));
+            }
+        }
+
         // Enforce block.nVersion=2 rule that the coinbase starts with serialized block height
-        if (nVersion >= 2)
+        if (nVersion >= BLOCK_VERSION2_BEFORE_FORK)
         {
             // if 750 of the last 1,000 blocks are version 2 or greater (51/100 if testnet):
-            if ((!fTestNet && CBlockIndex::IsSuperMajority(2, pindexPrev, 750, 1000)) ||
-                (fTestNet && CBlockIndex::IsSuperMajority(2, pindexPrev, 51, 100)))
+            if ((!fTestNet && CBlockIndex::IsSuperMajority(BLOCK_VERSION2_BEFORE_FORK, pindexPrev, 750, 1000)) ||
+                (fTestNet && CBlockIndex::IsSuperMajority(BLOCK_VERSION2_BEFORE_FORK, pindexPrev, 51, 100)))
             {
                 CScript expect = CScript() << nHeight;
                 if (vtx[0].vin[0].scriptSig.size() < expect.size() ||
@@ -2154,7 +2323,6 @@ bool ProcessBlock(CValidationState &state, CNode* pfrom, CBlock* pblock, CDiskBl
             return state.DoS(100, error("ProcessBlock() : block with too little proof-of-work"));
         }
     }
-
 
     // If we don't already have its previous block, shunt it off to holding area until we get it
     if (pblock->hashPrevBlock != 0 && !mapBlockIndex.count(pblock->hashPrevBlock))
@@ -2324,7 +2492,7 @@ CPartialMerkleTree::CPartialMerkleTree(const std::vector<uint256> &vTxid, const 
 
 CPartialMerkleTree::CPartialMerkleTree() : nTransactions(0), fBad(true) {}
 
-uint256 CPartialMerkleTree::ExtractMatches(std::vector<uint256> &vMatch) {
+/*uint256 CPartialMerkleTree::ExtractMatches(std::vector<uint256> &vMatch) {
     vMatch.clear();
     // An empty set will not work
     if (nTransactions == 0)
@@ -2355,9 +2523,7 @@ uint256 CPartialMerkleTree::ExtractMatches(std::vector<uint256> &vMatch) {
     if (nHashUsed != vHash.size())
         return 0;
     return hashMerkleRoot;
-}
-
-
+}*/
 
 
 

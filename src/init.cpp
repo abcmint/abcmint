@@ -22,6 +22,12 @@
 #include <signal.h>
 #endif
 
+#ifdef USE_ZMQ
+#include "zmqnotificationinterface.h"
+#else
+#include "validationinterface.h"
+#endif
+
 using namespace std;
 using namespace boost;
 
@@ -105,16 +111,32 @@ void Shutdown()
             pwalletMain->SetBestChain(CBlockLocator(pindexBest));
         if (pblocktree)
             pblocktree->Flush();
+        if (pPublicKeyPosDB)
+            pPublicKeyPosDB->Flush();
         if (pcoinsTip)
             pcoinsTip->Flush();
         delete pcoinsTip; pcoinsTip = NULL;
         delete pcoinsdbview; pcoinsdbview = NULL;
         delete pblocktree; pblocktree = NULL;
+		delete pPublicKeyPosDB; pPublicKeyPosDB = NULL;
     }
+
+#ifdef USE_ZMQ
+    if (g_zmq_notification_interface) {
+        UnregisterValidationInterface(g_zmq_notification_interface);
+        delete g_zmq_notification_interface;
+        g_zmq_notification_interface = NULL;
+    }
+#endif
+
     bitdb.Flush(true);
     boost::filesystem::remove(GetPidFile());
+
+    UnregisterAllValidationInterfaces();
+
     UnregisterWallet(pwalletMain);
     delete pwalletMain;
+
     printf("Shutdown : done\n");
 }
 
@@ -297,7 +319,6 @@ std::string HelpMessage()
         "  -conf=<file>           " + _("Specify configuration file (default: abcmint.conf)") + "\n" +
         "  -pid=<file>            " + _("Specify pid file (default: abcmint.pid)") + "\n" +
         "  -gen                   " + _("Generate coins (default: 0)") + "\n" +
-        "  -search                " + _("Search public key position (default: 1)") + "\n" +
         "  -datadir=<dir>         " + _("Specify data directory") + "\n" +
         "  -dbcache=<n>           " + _("Set database cache size in megabytes (default: 25)") + "\n" +
         "  -timeout=<n>           " + _("Specify connection timeout in milliseconds (default: 5000)") + "\n" +
@@ -346,10 +367,10 @@ std::string HelpMessage()
 #endif
         "  -rpcuser=<user>        " + _("Username for JSON-RPC connections") + "\n" +
         "  -rpcpassword=<pw>      " + _("Password for JSON-RPC connections") + "\n" +
-        "  -rpcport=<port>        " + _("Listen for JSON-RPC connections on <port> (default: 8332 or testnet: 18332)") + "\n" +
+        "  -rpcport=<port>        " + _("Listen for JSON-RPC connections on <port> (default: 8882 or testnet: 18882)") + "\n" +
         "  -rpcallowip=<ip>       " + _("Allow JSON-RPC connections from specified IP address") + "\n" +
 #ifndef QT_GUI
-        "  -rpcconnect=<ip>       " + _("Send commands to node running on <ip> (default: 127.0.0.1)") + "\n" +
+        //"  -rpcconnect=<ip>       " + _("Send commands to node running on <ip> (default: 127.0.0.1)") + "\n" +    //gj
 #endif
         "  -rpcthreads=<n>        " + _("Set the number of threads to service RPC calls (default: 4)") + "\n" +
         "  -blocknotify=<cmd>     " + _("Execute command when the best block changes (%s in cmd is replaced by block hash)") + "\n" +
@@ -369,6 +390,14 @@ std::string HelpMessage()
         "  -blockminsize=<n>      "   + _("Set minimum block size in bytes (default: 0)") + "\n" +
         "  -blockmaxsize=<n>      "   + _("Set maximum block size in bytes (default: 250000)") + "\n" +
         "  -blockprioritysize=<n> "   + _("Set maximum size of high-priority/low-fee transactions in bytes (default: 27000)") + "\n" +
+
+#ifdef USE_ZMQ
+        "\n" + _("ZeroMQ notification options:") + "\n" +
+        "  -zmqpubhashblock=<address>" + _("Enable publish hash block in <address>") + "\n" +
+        "  -zmqpubhashtx=<address>" + _("Enable publish hash transaction in <address>") + "\n" +
+        "  -zmqpubrawblock=<address>" + _("Enable publish raw block in <address>") + "\n" +
+        "  -zmqpubrawtx=<address>" + _("Enable publish raw transaction in <address>") + "\n" +
+#endif
 
         "\n" + _("SSL options: (see the Abcmint Wiki for SSL setup instructions)") + "\n" +
         "  -rpcssl                                  " + _("Use OpenSSL (https) for JSON-RPC connections") + "\n" +
@@ -795,11 +824,24 @@ bool AppInit2(boost::thread_group& threadGroup)
 
     // ********************************************************* Step 7: load block chain
 
+#ifdef USE_ZMQ
+    g_zmq_notification_interface = CZMQNotificationInterface::CreateWithArguments(mapArgs);
+    if (g_zmq_notification_interface) {
+        RegisterValidationInterface(g_zmq_notification_interface);
+    }
+#endif
+
     fReindex = GetBoolArg("-reindex");
     filesystem::path blocksDir = GetDataDir() / "blocks";
     if (!filesystem::exists(blocksDir))
     {
         filesystem::create_directories(blocksDir);
+    }
+
+    filesystem::path pubPosDir = GetDataDir() / "pubpos";
+    if(!filesystem::exists(pubPosDir))
+    {
+        filesystem::create_directories(pubPosDir);
     }
 
     // cache size calculations
@@ -828,8 +870,10 @@ bool AppInit2(boost::thread_group& threadGroup)
                 delete pcoinsTip;
                 delete pcoinsdbview;
                 delete pblocktree;
+                delete pPublicKeyPosDB;
 
                 pblocktree = new CBlockTreeDB(nBlockTreeDBCache, false, fReindex);
+                pPublicKeyPosDB = new CPublicKeyPosDB(0, false, fReindex);
                 pcoinsdbview = new CCoinsViewDB(nCoinDBCache, false, fReindex);
                 pcoinsTip = new CCoinsViewCache(*pcoinsdbview);
 
@@ -969,11 +1013,13 @@ bool AppInit2(boost::thread_group& threadGroup)
     if (fFirstRun)
     {
         // Create new keyUser and set as default key
+        unsigned int default_config_value = 0;
+        get_choised_info(NULL, NULL, NULL, &default_config_value);
 
         CPubKey newDefaultKey;
-        if (pwalletMain->GetKeyFromPool(newDefaultKey, true)) {
+        if (pwalletMain->GetKeyFromPool(newDefaultKey, default_config_value, true)) {
             pwalletMain->SetDefaultKey(newDefaultKey);
-            if (!pwalletMain->SetAddressBookName(pwalletMain->vchDefaultKey.GetID(), "default"))
+            if (!pwalletMain->SetAddressBookName(pwalletMain->vchDefaultKey.GetID(), ""))
                 strErrors << _("Cannot write default address") << "\n";
         }
 
@@ -1062,7 +1108,7 @@ bool AppInit2(boost::thread_group& threadGroup)
     GenerateAbcmints(GetBoolArg("-gen", false), pwalletMain);
 
     //seach block position for public key  in the background
-    SearchPubKeyPos(GetBoolArg("-search", true));
+    SearchPubKeyPos(threadGroup);
 
     // ********************************************************* Step 13: finished
 

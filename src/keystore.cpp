@@ -165,16 +165,16 @@ bool CCryptoKeyStore::GetKey(const CKeyID &address, CKey& keyOut) const
         CryptedKeyMap::const_iterator mi = mapCryptedKeys.find(address);
         if (mi != mapCryptedKeys.end())
         {
-            const CPubKey &vchPubKey = (*mi).second.first;
+            const CPubKey &pubKey = (*mi).second.first;
             const std::vector<unsigned char> &vchCryptedSecret = (*mi).second.second;
             CSecret vchSecret;
-            if (!DecryptSecret(vMasterKey, vchCryptedSecret, vchPubKey.GetHash(), vchSecret))
+            if (!DecryptSecret(vMasterKey, vchCryptedSecret, pubKey.GetHash(), vchSecret))
                 return false;
-            if (vchSecret.size() != RAINBOW_PRIVATE_KEY_SIZE)
-                return false;
-            keyOut.SetPubKey(vchPubKey);
+
+            keyOut.SetPubKey(pubKey);
             keyOut.SetPrivKey(vchSecret);
-            return true;
+            if (keyOut.IsValid())
+                return true;
         }
     }
     return false;
@@ -197,6 +197,23 @@ bool CCryptoKeyStore::GetPubKey(const CKeyID &address, CPubKey& vchPubKeyOut) co
     return false;
 }
 
+void CCryptoKeyStore::GetKeys(std::set<CKeyID> &setAddress) const
+{
+	if (!IsCrypted())
+    {
+    	CBasicKeyStore::GetKeys(setAddress);
+        return;
+    }
+    
+	setAddress.clear();
+    CryptedKeyMap::const_iterator mi = mapCryptedKeys.begin();
+    while (mi != mapCryptedKeys.end())
+    {
+    	setAddress.insert((*mi).first);
+    	mi++;
+    }
+}
+
 bool CCryptoKeyStore::EncryptKeys(CKeyingMaterial& vMasterKeyIn)
 {
     {
@@ -210,7 +227,7 @@ bool CCryptoKeyStore::EncryptKeys(CKeyingMaterial& vMasterKeyIn)
             CKey key;
             if (!key.SetPrivKey(mKey.second.GetPrivKey()))
                 return false;
-            const CPubKey vchPubKey = mKey.second.pubKey;
+            const CPubKey vchPubKey = mKey.second.GetPubKey();
             std::vector<unsigned char> vchCryptedSecret;
             if (!EncryptSecret(vMasterKeyIn, key.GetPrivKey(), vchPubKey.GetHash(), vchCryptedSecret))
                 return false;

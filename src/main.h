@@ -25,27 +25,27 @@ class CNode;
 struct CBlockIndexWorkComparator;
 
 /** The maximum allowed size for a serialized block, in bytes (network rule) */
-static const unsigned int MAX_BLOCK_SIZE = 0x800000; // 8 MiB
+static const unsigned int MAX_BLOCK_SIZE_BEFORE_FORK = 0x800000; // 8 MiB
+static const unsigned int MAX_BLOCK_SIZE = 0x800000 * 8; // 64 MiB
+
 /** Obsolete: maximum size for mined blocks */
 static const unsigned int MAX_BLOCK_SIZE_GEN = MAX_BLOCK_SIZE/2;
-/** Default for -blockmaxsize, maximum size for mined blocks **/
-static const unsigned int DEFAULT_BLOCK_MAX_SIZE = 0x800000; // 8 MiB
 /** Default for -blockprioritysize, maximum space for zero/low-fee transactions **/
 static const unsigned int DEFAULT_BLOCK_PRIORITY_SIZE = 30000;
 /** The maximum size for transactions we're willing to relay/mine */
-static const unsigned int MAX_STANDARD_TX_SIZE = 0x080000; //512 KB
+static const unsigned int MAX_STANDARD_TX_SIZE = 0x080000 * 7; //512*7 KB
 /** The maximum allowed number of signature check operations in a block (network rule) */
-static const unsigned int MAX_BLOCK_SIGOPS = MAX_BLOCK_SIZE/50;
+static const unsigned int MAX_BLOCK_SIGOPS = MAX_BLOCK_SIZE_BEFORE_FORK/50;
 /** The maximum number of orphan transactions kept in memory */
-static const unsigned int MAX_ORPHAN_TRANSACTIONS = MAX_BLOCK_SIZE/100;
+static const unsigned int MAX_ORPHAN_TRANSACTIONS = MAX_BLOCK_SIZE_BEFORE_FORK/100;
 /** The maximum number of entries in an 'inv' protocol message */
 static const unsigned int MAX_INV_SZ = 50000;
 /** The maximum size of a blk?????.dat file  */
-static const unsigned int MAX_BLOCKFILE_SIZE = 0x8000000; // 128 MiB
+static const unsigned int MAX_BLOCKFILE_SIZE = 0x8000000 * 8; // 128*8 MiB
 /** The pre-allocation chunk size for blk?????.dat files (since 0.8) */
-static const unsigned int BLOCKFILE_CHUNK_SIZE = 0x1000000; // 16 MiB
+static const unsigned int BLOCKFILE_CHUNK_SIZE = 0x1000000 * 8; // 16*8 MiB
 /** The pre-allocation chunk size for rev?????.dat files (since 0.8) */
-static const unsigned int UNDOFILE_CHUNK_SIZE = 0x800000; // 8 MiB, the same as MAX_BLOCK_SIZE
+static const unsigned int UNDOFILE_CHUNK_SIZE = 0x800000 * 8; // 8*8 MiB, the same as MAX_BLOCK_SIZE
 /** Fake height value used in CCoins to signify they are only in the memory pool (since 0.8) */
 static const unsigned int MEMPOOL_HEIGHT = 0x7FFFFFFF;
 /** No amount larger than this is valid */
@@ -57,7 +57,10 @@ static const int COINBASE_MATURITY = 100;
 static const unsigned int LOCKTIME_THRESHOLD = 500000000; // Tue Nov  5 00:53:20 1985 UTC
 /** Maximum number of script-checking threads allowed */
 static const int MAX_SCRIPTCHECK_THREADS = 16;
-static const int BLOCK_CURRENT_VERSION = 2;
+
+static const int BLOCK_VERSION2_BEFORE_FORK = 2;     //before fork (rainbowpro)
+static const int BLOCK_VERSION3_BEFORE_FORK = 3;     //before fork (rainbowpro)
+static const int BLOCK_CURRENT_VERSION = 101;        //after fork (rainbowpro)
 
 #ifdef USE_UPNP
 static const int fHaveUPnP = true;
@@ -105,6 +108,7 @@ static const uint64 nMinDiskSpace = 52428800;
 class CReserveKey;
 class CCoinsDB;
 class CBlockTreeDB;
+class CPublicKeyPosDB;
 struct CDiskBlockPos;
 class CCoins;
 class CTxUndo;
@@ -155,7 +159,7 @@ std::string GetWarnings(std::string strFor);
 /** Retrieve a transaction (from memory pool, or from disk, if possible) */
 bool GetTransaction(const uint256 &hash, CTransaction &tx, uint256 &hashBlock, bool fAllowSlow = false);
 /** Connect/disconnect blocks until pindexNew is the new tip of the active block chain */
-bool SetBestChain(CValidationState &state, CBlockIndex* pindexNew);
+bool SetBestChain(CValidationState &state, CBlockIndex* pindexNew, std::vector<CBlock> &connectTrace, std::vector<CBlock> &disconnectTrace);
 /** Find the best known block, and make it the tip of the block chain */
 bool ConnectBestBlock(CValidationState &state);
 /** Create a new block index entry for a given block hash */
@@ -438,7 +442,8 @@ class CTransaction
 public:
     static int64 nMinTxFee;
     static int64 nMinRelayTxFee;
-    static const int CURRENT_VERSION=1;
+    static const int VERSION_BEFORE_FORK=1;
+    static const int CURRENT_VERSION=101;
     int nVersion;
     std::vector<CTxIn> vin;
     std::vector<CTxOut> vout;
@@ -461,7 +466,11 @@ public:
 
     void SetNull()
     {
-        nVersion = CTransaction::CURRENT_VERSION;
+        if (nBestHeight < RAINBOWFORkHEIGHT) {
+            nVersion = CTransaction::VERSION_BEFORE_FORK;
+        } else {
+            nVersion = CTransaction::CURRENT_VERSION;
+        }
         vin.clear();
         vout.clear();
         nLockTime = 0;
@@ -1222,7 +1231,7 @@ public:
 
     // extract the matching txid's represented by this partial merkle tree.
     // returns the merkle root, or 0 in case of failure
-    uint256 ExtractMatches(std::vector<uint256> &vMatch);
+    //uint256 ExtractMatches(std::vector<uint256> &vMatch);
 };
 
 
@@ -1755,6 +1764,9 @@ struct CBlockIndexWorkComparator
         if (pa->nChainWork > pb->nChainWork) return false;
         if (pa->nChainWork < pb->nChainWork) return true;
 
+        if (pa->GetBlockHash() < pb->GetBlockHash()) return false;
+        if (pa->GetBlockHash() > pb->GetBlockHash()) return true;
+
         return false; // identical blocks
     }
 };
@@ -2182,6 +2194,7 @@ extern CCoinsViewCache *pcoinsTip;
 
 /** Global variable that points to the active block tree (protected by cs_main) */
 extern CBlockTreeDB *pblocktree;
+extern CPublicKeyPosDB *pPublicKeyPosDB;
 
 struct CBlockTemplate
 {

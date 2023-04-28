@@ -11,15 +11,16 @@
 #include "uint256.h"
 #include "hash.h"
 
-
+#include <boost/variant.hpp>
 /**
  * RAINBOW signature:
  */
-static const unsigned int RAINBOW_PUBLIC_KEY_SIZE             = 152097;
-static const unsigned int RAINBOW_SIGNATURE_SIZE              = 64;
-const static unsigned int RAINBOW_PRIVATE_KEY_SIZE            = 100209;
-static const unsigned int HASH_LEN_BYTES                      = 32;
+static const unsigned int RAINBOW_PUBLIC_KEY_SIZE           = 152097;
+static const unsigned int RAINBOW_SIGNATURE_SIZE            = 64;
+static const unsigned int RAINBOW_PRIVATE_KEY_SIZE          = 100209;
+static const unsigned int HASH_LEN_BYTES                    = 32;
 
+static const unsigned int RAINBOWFORkHEIGHT                 = 267120;       //nNewInterval(504) * n
 
 
 class key_error : public std::runtime_error
@@ -45,62 +46,46 @@ public:
     CScriptID(const uint256 &in) : uint256(in) { }
 };
 
+class CNoDestination {
+public:
+    friend bool operator==(const CNoDestination &a, const CNoDestination &b) { return true; }
+    friend bool operator<(const CNoDestination &a, const CNoDestination &b) { return true; }
+};
+
+/** A txout script template with a specific destination. It is either:
+ *  * CNoDestination: no destination set
+ *  * CKeyID: TX_PUBKEYHASH destination
+ *  * CScriptID: TX_SCRIPTHASH destination
+ *  A CTxDestination is the internal data type encoded in a CAbcmintAddress
+ */
+typedef boost::variant<CNoDestination, CKeyID, CScriptID> CTxDestination;
 
 /** An encapsulated public key. */
 class CPubKey {
-private:
-    friend class CKey;
-
 public:
-
     std::vector<unsigned char> vchPubKey;
+    
+public:
+    CPubKey() {}
 
-    CPubKey() 
-    {
-        vchPubKey.resize(RAINBOW_PUBLIC_KEY_SIZE);
+    CPubKey(const CPubKey &pk) {
+        vchPubKey = pk.vchPubKey;
     }
 
-
-    //! Initialize a public key using begin/end iterators to byte data.
-    template <typename T>
-    void Set(const T pbegin, const T pend) {
-            int len = pend == pbegin ? 0 : RAINBOW_PUBLIC_KEY_SIZE;
-            if (len && len == (pend - pbegin))
-                memcpy(vchPubKey.data(), (unsigned char*)&pbegin[0], len);
-            else
-                vchPubKey.resize(RAINBOW_PUBLIC_KEY_SIZE);
+    explicit CPubKey(const std::vector<unsigned char> &vchPubKeyIn) { 
+        vchPubKey = vchPubKeyIn;
     }
     
-    //! Construct a public key using begin/end iterators to byte data.
-    template <typename T>
-    CPubKey(const T pbegin, const T pend)
-    {
-        vchPubKey.resize(RAINBOW_PUBLIC_KEY_SIZE);
-        Set(pbegin, pend);
-    }
-    
-    CPubKey(const CPubKey &pk) 
-    {
-        vchPubKey.resize(RAINBOW_PUBLIC_KEY_SIZE);
-        Set(pk.vchPubKey.data(), pk.vchPubKey.data()+RAINBOW_PUBLIC_KEY_SIZE);
-    }
-
-
-    explicit CPubKey(const std::vector<unsigned char> &vchPubKeyIn) 
-    { 
-        vchPubKey.resize(RAINBOW_PUBLIC_KEY_SIZE);
-        memcpy(vchPubKey.data(), vchPubKeyIn.data(), vchPubKey.size());
-    }
     friend bool operator==(const CPubKey &a, const CPubKey &b) { return a.vchPubKey == b.vchPubKey; }
     friend bool operator!=(const CPubKey &a, const CPubKey &b) { return a.vchPubKey != b.vchPubKey; }
-    friend bool operator<(const CPubKey &a, const CPubKey &b) { return a.vchPubKey < b.vchPubKey; }
+
     CPubKey &operator = (const CPubKey &rhs) 
     {
         if (this == &rhs) {
             return *this;
         }
-        this->vchPubKey.resize(RAINBOW_PUBLIC_KEY_SIZE);
-        memcpy(this->vchPubKey.data(), rhs.vchPubKey.data(), RAINBOW_PUBLIC_KEY_SIZE);
+        
+        vchPubKey = rhs.vchPubKey;
         return *this;
     }
 
@@ -116,25 +101,20 @@ public:
     uint256 GetHash() const {
         return Hash(vchPubKey.begin(), vchPubKey.end());
     }
-
-    bool IsValid() const {
-        bool isNULL= true;
-        for (size_t i =0; i < vchPubKey.size(); i++) {
-            if ('\0' != vchPubKey[i]) {
-                isNULL = false;
-                break;
-            }
+    
+    int getPubKeyIndex();
+    
+    bool IsValid() {
+        int index = getPubKeyIndex();
+        if (-1 == index) {
+            return false;
         }
-        return vchPubKey.size() == RAINBOW_PUBLIC_KEY_SIZE && !isNULL;
+        
+        return true;
     }
-
-    bool Verify(uint256 hash, const std::vector<unsigned char>& vchSig);
-
-    std::vector<unsigned char> Raw() const {
-        return vchPubKey;
-    }
+    
+    bool Verify(unsigned int config_value, unsigned char* hash_buf, unsigned int hash_size, unsigned char* sign_buf, unsigned int sign_size, bool bMsg);
 };
-
 
 // secure_allocator is defined in allocators.h
 // CPrivKey is a serialized private key, with all parameters included
@@ -145,28 +125,30 @@ typedef std::vector<unsigned char > CSecret;
 class CKey
 {
 protected:
-
     bool fSet;
     std::vector<unsigned char > privKey;
-
-public:
-    //The public key associate to private key
     CPubKey pubKey;
 
-    void Reset();
-
+public:
     CKey();
     CKey(const CKey& b);
     ~CKey(){}
     CKey& operator=(const CKey& b);
     bool IsNull() const{return !fSet;}
-    void MakeNewKey();
+    void MakeNewKey(unsigned int config_value);
     bool SetPrivKey(const CPrivKey& vchPrivKey);
     CPrivKey GetPrivKey() const  {  return privKey;}
     bool SetPubKey(const CPubKey& vchPubKey);
     bool SetPubKey(std::vector<unsigned char> pk);
     CPubKey GetPubKey() const {      return (pubKey);}
-    bool Sign(uint256 hash, std::vector<unsigned char>& vchSig);
+    bool IsValid();
+    bool Sign(unsigned int config_value, unsigned char* m_hash, unsigned int mlen_hash, std::vector<unsigned char>& vchSig, bool bMsg);
 };
+
+uint32_t get_publicKey_size(unsigned char *pubkeyPrefix);
+void get_choised_info(unsigned int *pMin_byte_of_pk, unsigned int *pMin_byte_of_sign, unsigned int *max_byte_of_sign, unsigned int *default_config_value);
+bool publicKey_check_len(unsigned int len);
+std::string get_choised_config_values();
+unsigned int get_choised_config_from_config_value(unsigned int config_value, char *choised_sign_name);
 
 #endif

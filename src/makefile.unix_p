@@ -23,8 +23,7 @@ DEFS=-DBOOST_SPIRIT_THREADSAFE -D_FILE_OFFSET_BITS=64
 DEFS += $(addprefix -I,$(CURDIR) $(CURDIR)/obj $(BOOST_INCLUDE_PATH) $(BDB_INCLUDE_PATH) $(OPENSSL_INCLUDE_PATH))
 LIBS = $(addprefix -L,$(BOOST_LIB_PATH) $(BDB_LIB_PATH) $(OPENSSL_LIB_PATH))
 
-#LIBS += -L $(CURDIR)/rainbow18 -l rainbowpro_unix -luuid
-LIBS += $(CURDIR)/rainbow18/librainbowpro_unix.a -luuid
+LIBS += $(CURDIR)/rainbow18/librainbowpro_unix_p.a -luuid
 
 #
 # BerkeleyDB.5.1 support
@@ -133,7 +132,7 @@ xLDFLAGS=$(LDHARDENING) $(LDFLAGS)
 OBJS= \
     leveldb/libleveldb.a \
     pqcrypto/libpqcrypto.a \
-    rainbow18/librainbowpro_unix.a \
+    rainbow18/librainbowpro_unix_p.a \
     obj/alert.o \
     obj/version.o \
     obj/checkpoints.o \
@@ -175,7 +174,7 @@ OBJS= \
     obj/validationinterface.o
 
 
-all: abcmint 
+all: abcmint_p
 
 test check: test_abcmint FORCE
 	./test_abcmint
@@ -225,8 +224,8 @@ ifneq (${USE_GPU}, -)
 #LIBS += -L/usr/local/cuda/lib64 -l cudart
 #LIBS +=-l cudart_static.a
 DEFS +=-I /usr/local/cuda/include
-#LIBS += -lrt /usr/local/cuda/lib64/libcudart_static.a
-LIBS += -lrt /usr/lib/x86_64-linux-gnu/libcudart_static.a
+LIBS += -lrt /usr/local/cuda/lib64/libcudart_static.a
+#LIBS += -lrt /usr/lib/x86_64-linux-gnu/libcudart_static.a
 #LIBS += $$PWD/obj/libgpumining.a
 
 obj/kernel.inc: gen_kernel.py
@@ -245,7 +244,7 @@ obj/%.o: %.cpp
 	      -e '/^$$/ d' -e 's/$$/ :/' < $(@:%.o=%.d) >> $(@:%.o=%.P); \
 	  rm -f $(@:%.o=%.d)
 
-abcmint:  $(OBJS:obj/%=obj/%)
+abcmint_p:  $(OBJS:obj/%=obj/%)
 	$(LINK) $(xCXXFLAGS) -o $@ $^ $(xLDFLAGS) $(LIBS)	
 	
 
@@ -295,7 +294,7 @@ test_abcmint: $(TESTOBJS) $(filter-out obj/abcmint.o,$(OBJS:obj/%=obj/%))
 #	$(LINK) $(xCXXFLAGS) -o $@ $(LIBPATHS) $^ $(TESTLIBS) $(xLDFLAGS) $(LIBS)
 
 clean:
-	-rm -f abcmint test_abcmint
+	-rm -f abcmint_p test_abcmint
 	-rm -f obj/*.o
 	-rm -f obj-test/*.o
 	-rm -f pqcrypto/*.o

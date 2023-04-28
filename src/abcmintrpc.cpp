@@ -204,13 +204,15 @@ static const CRPCCommand vRPCCommands[] =
     { "getdifficulty",          &getdifficulty,          true,      false },
     { "getgenerate",            &getgenerate,            true,      false },
     { "setgenerate",            &setgenerate,            true,      false },
-    { "getsearchpubkeypos",     &getsearchpubkeypos,     true,      false },
-    { "setsearchpubkeypos",     &setsearchpubkeypos,     true,      false },
     { "gethashespersec",        &gethashespersec,        true,      false },
     { "getinfo",                &getinfo,                true,      false },
     { "getmininginfo",          &getmininginfo,          true,      false },
+    { "getchoisedconfigvalue",  &getchoisedconfigvalue,  true,      false },
+    { "getrainbowproinfo",      &getrainbowproinfo,      true,      false },
+    { "setmineraddress",        &setmineraddress,        true,      false },
+    { "getmineraddress",        &getmineraddress,        true,      false },
     { "getnewaddress",          &getnewaddress,          true,      false },
-    { "getaccountaddress",      &getaccountaddress,      true,      false },
+    //{ "getaccountaddress",      &getaccountaddress,      true,      false },
     { "setaccount",             &setaccount,             true,      false },
     { "getaccount",             &getaccount,             false,     false },
     { "getaddressesbyaccount",  &getaddressesbyaccount,  true,      false },
@@ -226,6 +228,7 @@ static const CRPCCommand vRPCCommands[] =
     { "encryptwallet",          &encryptwallet,          false,     false },
     { "validateaddress",        &validateaddress,        true,      false },
     { "getbalance",             &getbalance,             false,     false },
+    { "newgetbalance",          &newgetbalance,          false,     false },
     { "move",                   &movecmd,                false,     false },
     { "sendfrom",               &sendfrom,               false,     false },
     { "sendmany",               &sendmany,               false,     false },
@@ -242,12 +245,13 @@ static const CRPCCommand vRPCCommands[] =
     { "verifymessage",          &verifymessage,          false,     false },
     { "getwork",                &getwork,                true,      false },
     { "listaccounts",           &listaccounts,           false,     false },
+    { "newlistaccounts",        &newlistaccounts,        false,     false },
     { "settxfee",               &settxfee,               false,     false },
     { "getblocktemplate",       &getblocktemplate,       true,      false },
     { "submitblock",            &submitblock,            false,     false },
     { "listsinceblock",         &listsinceblock,         false,     false },
-    { "dumpkey",                &dumpkey,            true,      false },
-    { "importkey",              &importkey,          false,     false },
+    { "dumpkey",                &dumpkey,                true,      false },
+    { "importkey",              &importkey,              false,     false },
     { "listunspent",            &listunspent,            false,     false },
     { "getrawtransaction",      &getrawtransaction,      false,     false },
     { "createrawtransaction",   &createrawtransaction,   false,     false },
@@ -1138,12 +1142,11 @@ Array RPCConvertValues(const std::string &strMethod, const std::vector<std::stri
     //
     // Special case non-string parameter types
     //
+    if (strMethod == "getnewaddress"          && n > 0) ConvertTo<boost::uint64_t>(params[0]);
     if (strMethod == "stop"                   && n > 0) ConvertTo<bool>(params[0]);
     if (strMethod == "getaddednodeinfo"       && n > 0) ConvertTo<bool>(params[0]);
     if (strMethod == "setgenerate"            && n > 0) ConvertTo<bool>(params[0]);
     if (strMethod == "setgenerate"            && n > 1) ConvertTo<boost::int64_t>(params[1]);
-    if (strMethod == "setsearchpubkeypos"     && n > 0) ConvertTo<bool>(params[0]);
-    if (strMethod == "setsearchpubkeypos"     && n > 1) ConvertTo<boost::int64_t>(params[1]);
     if (strMethod == "sendtoaddress"          && n > 1) ConvertTo<double>(params[1]);
     if (strMethod == "settxfee"               && n > 0) ConvertTo<double>(params[0]);
     if (strMethod == "getreceivedbyaddress"   && n > 1) ConvertTo<boost::int64_t>(params[1]);

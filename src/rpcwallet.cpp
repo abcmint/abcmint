@@ -10,6 +10,8 @@
 #include "abcmintrpc.h"
 #include "init.h"
 #include "base58.h"
+#include "diskpubkeypos.h"
+#include "txdb.h"
 
 using namespace std;
 using namespace boost;
@@ -89,32 +91,57 @@ Value getinfo(const Array& params, bool fHelp)
     return obj;
 }
 
+Value getchoisedconfigvalue(const Array& params, bool fHelp) {
+    if (fHelp) {
+        throw runtime_error(
+            "getchoisedconfigvalue\n"
+            "Returns choised config values.");
+    }
+
+    return get_choised_config_values();
+}
+
+Value getrainbowproinfo(const Array& params, bool fHelp) {
+    if (fHelp) {
+        throw runtime_error(
+            "getrainbowproinfo\n"
+            "Returns rainbowpro fork info.");
+    }
+
+    std::string strInfo = "Rainbowpro fork height: ";
+    strInfo += std::to_string(RAINBOWFORkHEIGHT);
+    strInfo += ", Transaction version after fork: ";
+    strInfo += std::to_string(CTransaction::CURRENT_VERSION);
+
+    return strInfo;
+}
 
 Value getnewaddress(const Array& params, bool fHelp)
 {
-    if (fHelp || params.size() > 1)
+    if (fHelp || params.size() < 1 || params.size() > 2)
         throw runtime_error(
-            "getnewaddress [account]\n"
+            "getnewaddress [config_value][account]\n"
             "Returns a new Abcmint address for receiving payments.  "
             "If [account] is specified (recommended), it is added to the address book "
             "so payments received with the address will be credited to [account].");
 
     // Parse the account first so we don't generate a key if there's an error
+    unsigned int config_value = params[0].get_uint64();
     string strAccount;
-    if (params.size() > 0)
-        strAccount = AccountFromValue(params[0]);
+    if (params.size() > 1)
+        strAccount = AccountFromValue(params[1]);
 
     if (!pwalletMain->IsLocked())
         pwalletMain->TopUpKeyPool();
 
     // Generate a new key that is added to wallet
     CPubKey newKey;
-    if(pwalletMain->GetKeyFromPool(newKey, false)) {
+    if(pwalletMain->GetKeyFromPool(newKey, config_value, false)) {
         CKeyID keyID = newKey.GetID();
         pwalletMain->SetAddressBookName(keyID, strAccount);
         return CAbcmintAddress(keyID).ToString();
     } else
-          throw runtime_error("GetKeyFromPool return false\n");
+    	throw runtime_error("GetKeyFromPool return false\n");
 }
 
 
@@ -127,7 +154,9 @@ CAbcmintAddress GetAccountAddress(string strAccount, bool bForceNew=false)
 
     if (!account.vchPubKey.IsValid() || bForceNew)
     {
-        if(pwalletMain->GetKeyFromPool(account.vchPubKey, false)) {
+        unsigned int default_config_value = 0;
+        get_choised_info(NULL, NULL, NULL, &default_config_value);
+        if(pwalletMain->GetKeyFromPool(account.vchPubKey, default_config_value, false)) {
             pwalletMain->SetAddressBookName(account.vchPubKey.GetID(), strAccount);
             walletdb.WriteAccount(strAccount, account);
         } else
@@ -137,7 +166,7 @@ CAbcmintAddress GetAccountAddress(string strAccount, bool bForceNew=false)
     return CAbcmintAddress(account.vchPubKey.GetID());
 }
 
-Value getaccountaddress(const Array& params, bool fHelp)
+/*Value getaccountaddress(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() != 1)
         throw runtime_error(
@@ -152,13 +181,13 @@ Value getaccountaddress(const Array& params, bool fHelp)
     ret = GetAccountAddress(strAccount).ToString();
 
     return ret;
-}
+}*/
 
 
 
 Value setaccount(const Array& params, bool fHelp)
 {
-    if (fHelp || params.size() < 1 || params.size() > 2)
+    if (fHelp || params.size() != 2)
         throw runtime_error(
             "setaccount <abcmintaddress> <account>\n"
             "Sets the account associated with the given address.");
@@ -167,22 +196,14 @@ Value setaccount(const Array& params, bool fHelp)
     if (!address.IsValid())
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid Abcmint address");
 
-
-    string strAccount;
-    if (params.size() > 1)
-        strAccount = AccountFromValue(params[1]);
-
-    // Detect when changing the account of an address that is the 'unused current key' of another account:
+    string strAccount = AccountFromValue(params[1]);
     if (pwalletMain->mapAddressBook.count(address.Get()))
     {
-        string strOldAccount = pwalletMain->mapAddressBook[address.Get()];
-        if (address == GetAccountAddress(strOldAccount))
-            GetAccountAddress(strOldAccount, true);
+        pwalletMain->SetAddressBookName(address.Get(), strAccount);
+        return true;
+    } else {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid Abcmint address");
     }
-
-    pwalletMain->SetAddressBookName(address.Get(), strAccount);
-
-    return Value::null;
 }
 
 
@@ -313,12 +334,17 @@ Value signmessage(const Array& params, bool fHelp)
     if (!pwalletMain->GetKey(keyID, key))
         throw JSONRPCError(RPC_WALLET_ERROR, "Private key not available");
 
-    CHashWriter ss(SER_GETHASH, 0);
+    int pubkeyIndex = key.GetPubKey().getPubKeyIndex();
+    if (-1 == pubkeyIndex) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "Public key not available");
+    }
+
+    CHashWriterPro ss(pubkeyIndex, SER_GETHASH, 0);
     ss << strMessageMagic;
     ss << strMessage;
-
+    std::vector<unsigned char> tmpHash = ss.GetHash();
     vector<unsigned char> vchSig;
-    if (!key.Sign(ss.GetHash(), vchSig))
+    if (!key.Sign(pubkeyIndex, tmpHash.data(), tmpHash.size(), vchSig, true))
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Sign failed");
 
     return EncodeBase64(&vchSig[0], vchSig.size());
@@ -349,16 +375,22 @@ Value verifymessage(const Array& params, bool fHelp)
     if (fInvalid)
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Malformed base64 encoding");
 
-    CHashWriter ss(SER_GETHASH, 0);
-    ss << strMessageMagic;
-    ss << strMessage;
-
     CPubKey pubkey;
     if (!pwalletMain->GetPubKey(keyID, pubkey))
         throw JSONRPCError(RPC_WALLET_ERROR, "Private key not available");
 
-    if (!pubkey.Verify(ss.GetHash(), vchSig))
+    int pubKeyIndex = pubkey.getPubKeyIndex();
+    if (-1 == pubKeyIndex) {
         return false;
+    }
+
+    CHashWriterPro ss(pubKeyIndex, SER_GETHASH, 0);
+    ss << strMessageMagic;
+    ss << strMessage;
+    std::vector<unsigned char> tmpHash = ss.GetHash();
+    if (!pubkey.Verify(pubKeyIndex, tmpHash.data(), tmpHash.size(), vchSig.data(), vchSig.size(), true)) {
+        return false;
+    }
 
     return (pubkey.GetID() == keyID);
 }
@@ -451,7 +483,6 @@ Value getreceivedbyaccount(const Array& params, bool fHelp)
     return (double)nAmount / (double)COIN;
 }
 
-
 int64 GetAccountBalance(CWalletDB& walletdb, const string& strAccount, int nMinDepth)
 {
     int64 nBalance = 0;
@@ -482,7 +513,6 @@ int64 GetAccountBalance(const string& strAccount, int nMinDepth)
     CWalletDB walletdb(pwalletMain->strWalletFile);
     return GetAccountBalance(walletdb, strAccount, nMinDepth);
 }
-
 
 Value getbalance(const Array& params, bool fHelp)
 {
@@ -534,6 +564,31 @@ Value getbalance(const Array& params, bool fHelp)
     return ValueFromAmount(nBalance);
 }
 
+Value newgetbalance(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() > 1)
+        throw runtime_error(
+            "newgetbalance [address]\n"
+            "If [address] is not specified, returns the server's total available balance.\n"
+            "If [address] is specified, returns the balance in the address.");
+
+    string strAddress;
+    if (params.size() != 0) {
+        strAddress = params[0].get_str();
+        if (!CAbcmintAddress(strAddress).IsValid())
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid Abcmint address");
+    }
+
+    int64 bal = pwalletMain->GetBalance(strAddress);
+    int64 unconfirmed = pwalletMain->GetUnconfirmedBalance(strAddress);
+    int64 immature = pwalletMain->GetImmatureBalance(strAddress);
+
+    Object result;
+    result.push_back(Pair("balance", ValueFromAmount(bal)));
+    result.push_back(Pair("unconfirmed", ValueFromAmount(unconfirmed)));
+    result.push_back(Pair("immature", ValueFromAmount(immature)));
+    return result;
+}
 
 Value movecmd(const Array& params, bool fHelp)
 {
@@ -738,23 +793,35 @@ Value getpublickeypos(const Array& params, bool fHelp)
     }
 
     std::string strAddress = params[0].get_str();
-    CAbcmintAddress address(strAddress);
-    if (!address.IsValid())
+    if (!CAbcmintAddress(strAddress).IsValid())
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid Abcmint address");
 
-    CKeyID keyID;
-    if (!address.GetKeyID(keyID))
-        throw JSONRPCError(RPC_TYPE_ERROR, "Address does not refer to key");
+    if(!pPublicKeyPosDB){
+        throw JSONRPCError(RPC_WALLET_ERROR, "Error occurred");
+    }
+
+    CDiskPubKeyPos pubKeyPos;
+    if(!pPublicKeyPosDB->ReadPublicKeyPos(strAddress, pubKeyPos))
+        throw JSONRPCError(RPC_WALLET_ERROR, "Can't get public key position(error 1)");
 
     CPubKey pubKey;
-    if (!pwalletMain->GetPubKey(keyID, pubKey))
-        throw JSONRPCError(RPC_WALLET_ERROR, "address not found in wallet.");
+    if(!GetPubKeyByPos(pubKeyPos, pubKey)){
+        //Failed to get public key by the pos,delete this pos entity!
+        pPublicKeyPosDB->DeletePublicKeyPos(strAddress);
+        throw JSONRPCError(RPC_WALLET_ERROR, "Can't get public key position(error 2)");
+    }
 
-    CDiskPubKeyPos pos;
-    if (!pwalletMain->GetPubKeyPos(strAddress, pos))
-        throw JSONRPCError(RPC_WALLET_ERROR, "can't get public key position");
+    std::string addressStr = CAbcmintAddress(pubKey.GetID()).ToString();
+    if (addressStr != strAddress) {
+        pPublicKeyPosDB->DeletePublicKeyPos(strAddress);
+        throw JSONRPCError(RPC_WALLET_ERROR, "Can't get public key position(error 3)");
+    }
 
-    return HexStr(pos.ToVector());
+    if (nBestHeight - pubKeyPos.nHeight + 1 < COINBASE_MATURITY+20) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "Can't get public key position");
+    }
+    
+    return HexStr(pubKeyPos.ToVector());
 }
 
 Value addmultisigaddress(const Array& params, bool fHelp)
@@ -1125,6 +1192,58 @@ Value listaccounts(const Array& params, bool fHelp)
     return ret;
 }
 
+Value newlistaccounts(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() > 0)
+        throw runtime_error(
+            "newlistaccounts\n"
+            "Returns Object that has account names as keys, account balances as values.");
+
+    map<string, int64> mapAccountBalances;
+    BOOST_FOREACH(const PAIRTYPE(CTxDestination, string)& entry, pwalletMain->mapAddressBook) {
+        if (IsMine(*pwalletMain, entry.first)) {
+            mapAccountBalances[entry.second] = 0;
+        }
+    }
+
+    map<CTxDestination, int64> mapAddressBalances;
+    for (map<uint256, CWalletTx>::const_iterator it = pwalletMain->mapWallet.begin(); it != pwalletMain->mapWallet.end(); ++it)
+    {
+        const CWalletTx& wtx = (*it).second;
+        if (wtx.IsConfirmed()) {
+
+            if (wtx.IsCoinBase() && wtx.GetBlocksToMaturity() > 0)
+                continue;
+
+            for (unsigned int i = 0; i < wtx.vout.size(); i++)
+            {
+                if (wtx.IsSpent(i))
+                    continue;
+                    
+                const CTxOut &txout = wtx.vout[i];
+                CTxDestination addressId;
+                if (!ExtractDestination(txout.scriptPubKey, addressId) || !IsMine(*pwalletMain, addressId))
+                    continue;
+
+                mapAddressBalances[addressId] += txout.nValue;                    
+            }
+        }
+    }
+    
+    BOOST_FOREACH(const PAIRTYPE(CTxDestination, int64)& addressBalance, mapAddressBalances) {
+        map<CTxDestination, std::string>::iterator mi = pwalletMain->mapAddressBook.find(addressBalance.first);
+        if (mi != pwalletMain->mapAddressBook.end()) {
+            mapAccountBalances[mi->second] += addressBalance.second;
+        }
+    }
+
+    Object ret;
+    BOOST_FOREACH(const PAIRTYPE(string, int64)& accountBalance, mapAccountBalances) {
+        ret.push_back(Pair(accountBalance.first, ValueFromAmount(accountBalance.second)));
+    }
+    return ret;
+}
+
 Value listsinceblock(const Array& params, bool fHelp)
 {
     if (fHelp)
@@ -1413,10 +1532,10 @@ public:
 
     Object operator()(const CKeyID &keyID) const {
         Object obj;
-        CPubKey vchPubKey;
-        pwalletMain->GetPubKey(keyID, vchPubKey);
+        CPubKey pubKey;
+        pwalletMain->GetPubKey(keyID, pubKey);
         obj.push_back(Pair("isscript", false));
-        obj.push_back(Pair("pubkey", HexStr(vchPubKey.Raw())));
+        obj.push_back(Pair("pubkey", HexStr(pubKey.vchPubKey)));
         return obj;
     }
 
@@ -1538,40 +1657,5 @@ Value listlockunspent(const Array& params, bool fHelp)
     }
 
     return ret;
-}
-
-Value getsearchpubkeypos(const Array& params, bool fHelp)
-{
-    if (fHelp || params.size() != 0)
-        throw runtime_error(
-            "getsearchpubkeypos\n"
-            "Returns true or false.");
-
-    return GetBoolArg("-search", true);
-}
-
-Value setsearchpubkeypos(const Array& params, bool fHelp)
-{
-    if (fHelp || params.size() < 1 || params.size() > 2)
-        throw runtime_error(
-            "setsearchpubkeypos <search> [searchproclimit]\n"
-            "<search> is true or false to turn search on or off.\n"
-            "search is limited to [searchproclimit] processors, -1 is unlimited.");
-
-    bool fSearch = true;
-    if (params.size() > 0)
-        fSearch = params[0].get_bool();
-
-    if (params.size() > 1)
-    {
-        int nSearchProcLimit = params[1].get_int();
-        mapArgs["-searchproclimit"] = itostr(nSearchProcLimit);
-        if (nSearchProcLimit == 0)
-            fSearch = false;
-    }
-    mapArgs["-search"] = (fSearch ? "1" : "0");
-
-    SearchPubKeyPos(fSearch);
-    return Value::null;
 }
 

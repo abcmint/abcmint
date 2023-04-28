@@ -12,6 +12,53 @@
 using namespace json_spirit;
 using namespace std;
 
+Value getmineraddress(const Array& params, bool fHelp) {
+    if (fHelp) {
+        throw runtime_error(
+            "getmineraddress\n"
+            "Returns current miner address.");
+    }
+
+    return pwalletMain->vchMinerAddress;
+}
+
+Value setmineraddress(const Array& params, bool fHelp) {
+    if (fHelp || params.size() > 1) {
+        throw runtime_error(
+            "setmineraddress [address]\n"
+            "[address] is a miner address.\n"
+            "if [address] is not specified, it means cancel miner address.");
+    }
+
+    if (0 == params.size()) {
+        if (!pwalletMain->SetMinerAddress(""))
+            throw runtime_error("Cancel miner address return false\n");
+
+        pwalletMain->RefreshAddressTable();
+        return true;
+    }
+
+    string strAddress = params[0].get_str();
+    CKeyID keyId;
+    if (!CAbcmintAddress(strAddress).GetKeyID(keyId))
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid Abcmint address");
+
+    std::map<CTxDestination, std::string>::iterator mi = pwalletMain->mapAddressBook.find(keyId);
+    if (mi == pwalletMain->mapAddressBook.end() || !IsMine(*pwalletMain, keyId)) {
+        if (!pwalletMain->SetMinerAddress(strAddress))
+            throw runtime_error("Set miner address return false\n");
+        
+        if (mi == pwalletMain->mapAddressBook.end()) {
+            pwalletMain->SetAddressBookName(keyId, "");
+        }
+        pwalletMain->RefreshAddressTable();
+    } else {
+        throw runtime_error("miner address already exists at the addressbook\n");
+    }
+
+    return true;
+}
+
 Value getgenerate(const Array& params, bool fHelp)
 {
     if (fHelp || params.size() != 0)
@@ -31,9 +78,7 @@ Value setgenerate(const Array& params, bool fHelp)
             "<generate> is true or false to turn generation on or off.\n"
             "Generation is limited to [genproclimit] processors, -1 is unlimited.");
 
-    bool fGenerate = true;
-    if (params.size() > 0)
-        fGenerate = params[0].get_bool();
+    bool fGenerate = params[0].get_bool();
 
     if (params.size() > 1)
     {
@@ -152,8 +197,8 @@ Value getwork(const Array& params, bool fHelp)
         pblock->nNonce = 0;
 
         // Update nExtraNonce
-        static unsigned int nExtraNonce = 0;
-        IncrementExtraNonce(pblock, pindexPrev, nExtraNonce);
+        static unsigned int nExNonce = 0;
+        IncrementExtraNonce(pblock, pindexPrev, nExNonce);
 
         // Save
         mapNewBlock[pblock->hashMerkleRoot] = make_pair(pblock, pblock->vtx[0].vin[0].scriptSig);
@@ -332,11 +377,11 @@ Value getblocktemplate(const Array& params, bool fHelp)
     result.push_back(Pair("target", (int)pblock->nBits));
     result.push_back(Pair("mintime", (int64_t)pindexPrev->GetMedianTimePast()+1));
     result.push_back(Pair("mutable", aMutable));
-    result.push_back(Pair("noncerange", "00000000ffffffff"));
+    result.push_back(Pair("noncerange", "ffffffffffffffff"));
     result.push_back(Pair("sigoplimit", (int64_t)MAX_BLOCK_SIGOPS));
     result.push_back(Pair("sizelimit", (int64_t)MAX_BLOCK_SIZE));
     result.push_back(Pair("curtime", (int64_t)pblock->nTime));
-    result.push_back(Pair("bits", (int)(pblock->nBits)));
+    result.push_back(Pair("bits", strprintf("%x", pblock->nBits)));
     result.push_back(Pair("height", (int64_t)(pindexPrev->nHeight+1)));
 
     return result;

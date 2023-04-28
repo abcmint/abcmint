@@ -27,10 +27,10 @@ struct CompareValueOnly
     }
 };
 
-CPubKey CWallet::GenerateNewKey()
+CPubKey CWallet::GenerateNewKey(unsigned int config_value)
 {
     CKey key;
-    key.MakeNewKey();
+    key.MakeNewKey(config_value);
 
     if (!AddKey(key))
         throw std::runtime_error("CWallet::GenerateNewKey() : AddKey failed");
@@ -524,7 +524,6 @@ bool CWallet::EraseFromWallet(uint256 hash)
     return true;
 }
 
-
 bool CWallet::IsMine(const CTxIn &txin) const
 {
     {
@@ -660,6 +659,33 @@ void CWalletTx::GetAmounts(list<pair<CTxDestination, int64> >& listReceived,
             listReceived.push_back(make_pair(address, txout.nValue));
     }
 
+}
+
+int64 CWalletTx::GetAddressAmounts(const string& strAddress) const
+{
+    if (IsCoinBase() && GetBlocksToMaturity() > 0)
+        return 0;
+
+    int64 nCredit = 0;
+    for (unsigned int i = 0; i < vout.size(); i++)
+    {
+        if (IsSpent(i))
+            continue;
+        
+        const CTxOut &txout = vout[i];
+        CTxDestination addressId;
+        if (!ExtractDestination(txout.scriptPubKey, addressId) || !IsMine(*pwallet, addressId))
+            continue;
+
+        if (CAbcmintAddress(addressId).ToString() != strAddress)
+            continue;
+
+        nCredit += txout.nValue;
+        if (!MoneyRange(nCredit))
+            throw std::runtime_error("CWalletTx::GetAddressAmounts() : value out of range");
+        
+    }
+    return nCredit;
 }
 
 void CWalletTx::GetAccountAmounts(const string& strAccount, int64& nReceived,
@@ -905,9 +931,7 @@ void CWallet::ResendWalletTransactions()
 //
 // Actions
 //
-
-
-int64 CWallet::GetBalance() const
+int64 CWallet::GetBalance(const string& strAddress) const
 {
     int64 nTotal = 0;
     {
@@ -915,15 +939,20 @@ int64 CWallet::GetBalance() const
         for (map<uint256, CWalletTx>::const_iterator it = mapWallet.begin(); it != mapWallet.end(); ++it)
         {
             const CWalletTx* pcoin = &(*it).second;
-            if (pcoin->IsConfirmed())
-                nTotal += pcoin->GetAvailableCredit();
+            if (pcoin->IsConfirmed()) {
+                if (strAddress.empty()) {
+                    nTotal += pcoin->GetAvailableCredit();
+                } else {
+                    nTotal += pcoin->GetAddressAmounts(strAddress);
+                }
+            }
         }
     }
 
     return nTotal;
 }
 
-int64 CWallet::GetUnconfirmedBalance() const
+int64 CWallet::GetUnconfirmedBalance(const string& strAddress) const
 {
     int64 nTotal = 0;
     {
@@ -931,14 +960,19 @@ int64 CWallet::GetUnconfirmedBalance() const
         for (map<uint256, CWalletTx>::const_iterator it = mapWallet.begin(); it != mapWallet.end(); ++it)
         {
             const CWalletTx* pcoin = &(*it).second;
-            if (!pcoin->IsFinal() || !pcoin->IsConfirmed())
-                nTotal += pcoin->GetAvailableCredit();
+            if (!pcoin->IsFinal() || !pcoin->IsConfirmed()) {
+                if (strAddress.empty()) {
+                    nTotal += pcoin->GetAvailableCredit();
+                } else {
+                    nTotal += pcoin->GetAddressAmounts(strAddress);
+                }
+            }
         }
     }
     return nTotal;
 }
 
-int64 CWallet::GetImmatureBalance() const
+int64 CWallet::GetImmatureBalance(const string& strAddress) const
 {
     int64 nTotal = 0;
     {
@@ -946,14 +980,18 @@ int64 CWallet::GetImmatureBalance() const
         for (map<uint256, CWalletTx>::const_iterator it = mapWallet.begin(); it != mapWallet.end(); ++it)
         {
             const CWalletTx* pcoin = &(*it).second;
-            nTotal += pcoin->GetImmatureCredit();
+            if (strAddress.empty()) {
+                nTotal += pcoin->GetImmatureCredit();
+            } else {
+                nTotal += pcoin->GetImmatureCredit(strAddress);
+            }
         }
     }
     return nTotal;
 }
 
 // populate vCoins with vector of spendable COutputs
-void CWallet::AvailableCoins(vector<COutput>& vCoins, bool fOnlyConfirmed) const
+void CWallet::AvailableCoins(vector<COutput>& vCoins, bool fOnlyConfirmed, const std::string &strAddress) const
 {
     vCoins.clear();
 
@@ -973,9 +1011,16 @@ void CWallet::AvailableCoins(vector<COutput>& vCoins, bool fOnlyConfirmed) const
                 continue;
 
             for (unsigned int i = 0; i < pcoin->vout.size(); i++) {
-                if (!(pcoin->IsSpent(i)) && IsMine(pcoin->vout[i]) &&
-                    !IsLockedCoin((*it).first, i) && pcoin->vout[i].nValue > 0)
-                    vCoins.push_back(COutput(pcoin, i, pcoin->GetDepthInMainChain()));
+                if (!(pcoin->IsSpent(i)) && IsMine(pcoin->vout[i]) && !IsLockedCoin((*it).first, i) && pcoin->vout[i].nValue > 0) {
+                    if (!strAddress.empty()) {
+                        CTxDestination addressId;
+                        if (ExtractDestination(pcoin->vout[i].scriptPubKey, addressId) && CAbcmintAddress(addressId).ToString() == strAddress) {
+                            vCoins.push_back(COutput(pcoin, i, pcoin->GetDepthInMainChain()));
+                        }
+                    } else {
+                        vCoins.push_back(COutput(pcoin, i, pcoin->GetDepthInMainChain()));
+                    }
+                }
             }
         }
     }
@@ -1126,10 +1171,10 @@ bool CWallet::SelectCoinsMinConf(int64 nTargetValue, int nConfMine, int nConfThe
     return true;
 }
 
-bool CWallet::SelectCoins(int64 nTargetValue, set<pair<const CWalletTx*,unsigned int> >& setCoinsRet, int64& nValueRet) const
+bool CWallet::SelectCoins(int64 nTargetValue, set<pair<const CWalletTx*,unsigned int> >& setCoinsRet, int64& nValueRet, const std::string &strAddress) const
 {
     vector<COutput> vCoins;
-    AvailableCoins(vCoins);
+    AvailableCoins(vCoins, true, strAddress);
 
     return (SelectCoinsMinConf(nTargetValue, 1, 6, vCoins, setCoinsRet, nValueRet) ||
             SelectCoinsMinConf(nTargetValue, 1, 1, vCoins, setCoinsRet, nValueRet) ||
@@ -1139,8 +1184,8 @@ bool CWallet::SelectCoins(int64 nTargetValue, set<pair<const CWalletTx*,unsigned
 
 
 
-bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend,
-                                CWalletTx& wtxNew, CReserveKey& reservekey, int64& nFeeRet, std::string& strFailReason)
+bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend, CWalletTx& wtxNew, CReserveKey& reservekey,
+								int64& nFeeRet, std::string& strFailReason, const std::string &strAddress)
 {
     int64 nValue = 0;
     BOOST_FOREACH (const PAIRTYPE(CScript, int64)& s, vecSend)
@@ -1188,7 +1233,8 @@ bool CWallet::CreateTransaction(const vector<pair<CScript, int64> >& vecSend,
                 // Choose coins to use
                 set<pair<const CWalletTx*,unsigned int> > setCoins;
                 int64 nValueIn = 0;
-                if (!SelectCoins(nTotalValue, setCoins, nValueIn))
+                
+                if (!SelectCoins(nTotalValue, setCoins, nValueIn, strAddress))
                 {
                     strFailReason = _("Insufficient funds");
                     return false;
@@ -1487,6 +1533,17 @@ bool CWallet::SetDefaultKey(const CPubKey &vchPubKey)
     return true;
 }
 
+bool CWallet::SetMinerAddress(const std::string &strAddr)
+{
+    if (fFileBacked)
+    {
+        if (!CWalletDB(strWalletFile).WriteMinerAddress(strAddr))
+            return false;
+    }
+    vchMinerAddress = strAddr;
+    return true;
+}
+
 bool GetWalletFile(CWallet* pwallet, string &strWalletFileOut)
 {
     if (!pwallet->fFileBacked)
@@ -1512,10 +1569,12 @@ bool CWallet::NewKeyPool()
             return false;
 
         int64 nKeys = max(GetArg("-keypool", 1), (int64)0);
+        unsigned int default_config_value = 0;
+        get_choised_info(NULL, NULL, NULL, &default_config_value);
         for (int i = 0; i < nKeys; i++)
         {
             int64 nIndex = i+1;
-            walletdb.WritePool(nIndex, CKeyPool(GenerateNewKey()));
+            walletdb.WritePool(nIndex, CKeyPool(GenerateNewKey(default_config_value)));
             setKeyPool.insert(nIndex);
         }
         printf("CWallet::NewKeyPool wrote %" PRI64d " new keys\n", nKeys);
@@ -1535,12 +1594,14 @@ bool CWallet::TopUpKeyPool()
 
         // Top up key pool
         unsigned int nTargetSize = max(GetArg("-keypool", 0), 0LL);
+        unsigned int default_config_value = 0;
+        get_choised_info(NULL, NULL, NULL, &default_config_value);
         while (setKeyPool.size() < (nTargetSize + 1))
         {
             int64 nEnd = 1;
             if (!setKeyPool.empty())
                 nEnd = *(--setKeyPool.end()) + 1;
-            if (!walletdb.WritePool(nEnd, CKeyPool(GenerateNewKey())))
+            if (!walletdb.WritePool(nEnd, CKeyPool(GenerateNewKey(default_config_value))))
                 throw runtime_error("TopUpKeyPool() : writing generated key failed");
             setKeyPool.insert(nEnd);
             printf("keypool added key %" PRI64d ", size=%" PRIszu "\n", nEnd, setKeyPool.size());
@@ -1614,7 +1675,7 @@ void CWallet::ReturnKey(int64 nIndex)
     printf("keypool return %" PRI64d "\n", nIndex);
 }
 
-bool CWallet::GetKeyFromPool(CPubKey& result, bool fAllowReuse)
+bool CWallet::GetKeyFromPool(CPubKey& result, unsigned int config_value, bool fAllowReuse)
 {
     int64 nIndex = 0;
     CKeyPool keypool;
@@ -1628,8 +1689,10 @@ bool CWallet::GetKeyFromPool(CPubKey& result, bool fAllowReuse)
                 result = vchDefaultKey;
                 return true;
             }
-            if (IsLocked()) return false;
-            result = GenerateNewKey();
+            if (IsLocked()) {
+                return false;
+            }
+            result = GenerateNewKey(config_value);
             return true;
         }
         KeepKey(nIndex);
@@ -1802,6 +1865,24 @@ bool CReserveKey::GetReservedKey(CPubKey& pubkey)
     return true;
 }
 
+bool CReserveKey::GetMinerAddress(CKeyID &keyId)
+{
+    if (!pwallet->vchMinerAddress.empty()) {
+        CAbcmintAddress address(pwallet->vchMinerAddress);
+        if (address.GetKeyID(keyId)) {
+            return true;
+        }
+    }
+
+    CPubKey pubkey;
+    if (!GetReservedKey(pubkey))
+        return false;
+    
+    keyId = pubkey.GetID();
+    return true;
+}
+
+
 void CReserveKey::KeepKey()
 {
     if (nIndex != -1)
@@ -1836,6 +1917,11 @@ void CWallet::GetAllReserveKeys(set<CKeyID>& setAddress)
             throw runtime_error("GetAllReserveKeyHashes() : unknown key in key pool");
         setAddress.insert(keyID);
     }
+}
+
+void CWallet::RefreshAddressTable()
+{
+    NotifyRefreshAddressTable(this);
 }
 
 void CWallet::UpdatedTransaction(const uint256 &hashTx)

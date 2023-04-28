@@ -326,6 +326,10 @@ ReadKeyValue(CWallet* pwallet, CDataStream& ssKey, CDataStream& ssValue,
         {
             ssValue >> pwallet->vchDefaultKey;
         }
+        else if (strType == "mineraddress")
+        {
+            ssValue >> pwallet->vchMinerAddress;
+        }
         else if (strType == "pool")
         {
             int64 nIndex;

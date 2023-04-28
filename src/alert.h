@@ -89,7 +89,7 @@ public:
     bool AppliesTo(int nVersion, std::string strSubVerIn) const;
     bool AppliesToMe() const;
     bool RelayTo(CNode* pnode) const;
-    bool CheckSignature() const;
+    bool CheckSignature();
     bool ProcessAlert(bool fThread = true);
 
     /*

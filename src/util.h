@@ -14,7 +14,9 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 #else
+#ifndef MINGW
 typedef int pid_t; /* define for Windows compatibility */
+#endif
 #endif
 #include <map>
 #include <list>
@@ -471,6 +473,13 @@ public:
         vSorted = vValues;
     }
 
+    CMedianFilter(unsigned int size):
+        nSize(size)
+    {
+        vValues.reserve(size);
+        vSorted = vValues;
+    }
+
     void input(T value)
     {
         if(vValues.size() == nSize)
@@ -487,7 +496,10 @@ public:
     T median() const
     {
         int size = vSorted.size();
-        assert(size>0);
+        if (0 == size) {
+            return 0;
+        }
+        
         if(size & 1) // Odd number of elements
         {
             return vSorted[size/2];
