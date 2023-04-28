@@ -4,11 +4,15 @@ macx:TARGET = "Abcmint-Qt"
 VERSION = 0.8.6
 INCLUDEPATH += src src/json src/qt
 QT += network
+QT += core
+QT += gui 
+QT += widgets
 DEFINES += QT_GUI BOOST_THREAD_USE_LIB BOOST_SPIRIT_THREADSAFE
 CONFIG += no_include_pwd
 CONFIG += thread
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets 
-#CONFIG += static
+CONFIG += -static
+#QMAKE_CFLAGS_ISYSTEM = -I
 # for boost 1.37, add -mt to the boost libraries
 # use: qmake BOOST_LIB_SUFFIX=-mt
 # for boost thread win32 with _win32 sufix
@@ -18,19 +22,24 @@ greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 # Dependency library locations can be customized with:
 #    BOOST_INCLUDE_PATH, BOOST_LIB_PATH, BDB_INCLUDE_PATH,
 #    BDB_LIB_PATH, OPENSSL_INCLUDE_PATH and OPENSSL_LIB_PATH respectively
-#BOOST_LIB_SUFFIX=
-#BOOST_INCLUDE_PATH=/usr/local/include
-#BOOST_LIB_PATH=/usr/local/lib
-#BDB_INCLUDE_PATH=/usr/local/opt/db/include
-#BDB_LIB_PATH=/usr/local/opt/db/lib
-#OPENSSL_INCLUDE_PATH=/usr/local/opt/openssl/include
-#OPENSSL_LIB_PATH=/usr/local/opt/openssl/lib
-#MINIUPNPC_INCLUDE_PATH=/usr/local/opt/miniupnpc/include
-#MINIUPNPC_LIB_PATH=/usr/local/opt/miniupnpc/lib
-#QRENCODE_INCLUDE_PATH=/usr/local/opt/qrencode/include
-#QRENCODE_LIB_PATH=/usr/local/opt/qrencode/lib
+BOOST_LIB_SUFFIX=
+#BOOST_INCLUDE_PATH=/home/tao/deps/boost_1_65_0
+#BOOST_LIB_PATH=/home/tao/deps/boost_1_65_0/stage/lib
+#BDB_INCLUDE_PATH=/home/tao/deps/db-5.1.29/build_unix
+#BDB_LIB_PATH=/home/tao/deps/db-5.1.29/build_unix
+#OPENSSL_INCLUDE_PATH=/home/tao/deps/openssl-1.1.0g/include
+#OPENSSL_LIB_PATH=/home/tao/deps/openssl-1.1.0g
+#MINIUPNPC_INCLUDE_PATH=/home/tao/deps/miniupnp
+#MINIUPNPC_LIB_PATH=/home/tao/deps/miniupnp/miniupnpc
 
-
+BOOST_LIB_PATH=/usr/lib/x86_64-linux-gnu
+BDB_LIB_PATH=/usr/lib/x86_64-linux-gnu
+OPENSSL_LIB_PATH=/usr/lib/x86_64-linux-gnu
+MINIUPNPC_LIB_PATH=/usr/lib/x86_64-linux-gnu
+UUID_LIB_PATH=/usr/lib/x86_64-linux-gnu
+#QRENCODE_INCLUDE_PATH=/usr/include
+#QRENCODE_LIB_PATH=/usr/lib/x86_64-linux-gnu
+#PNG_LIB_PATH=/usr/lib/x86_64-linux-gnu
 
 OBJECTS_DIR = build
 MOC_DIR = build
@@ -38,6 +47,7 @@ UI_DIR = build
 
 # use: qmake "RELEASE=1"
 contains(RELEASE, 1) {
+    message(Building Release)
     # Mac: compile for maximum compatibility (10.5, 32-bit)
     macx:QMAKE_CXXFLAGS += -mmacosx-version-min=10.5 -arch i386 -isysroot /Developer/SDKs/MacOSX10.5.sdk
     macx:QMAKE_CFLAGS += -mmacosx-version-min=10.5 -arch i386 -isysroot /Developer/SDKs/MacOSX10.5.sdk
@@ -46,6 +56,7 @@ contains(RELEASE, 1) {
     !win32:!macx {
         # Linux: static link and extra security (see: https://wiki.debian.org/Hardening)
         LIBS += -Wl,-Bstatic -Wl,-z,relro -Wl,-z,now
+        QMAKE_LFLAGS += -no-pie
     }
 }
 
@@ -63,13 +74,38 @@ win32:QMAKE_LFLAGS *= -Wl,--dynamicbase -Wl,--nxcompat
 # on Windows: enable GCC large address aware linker flag
 win32:QMAKE_LFLAGS *= -std=c++11 -Wl,--large-address-aware static
 
+contains(USE_ZMQ, 1) {
+    message(Building with ZMQ support)
+    DEFINES += USE_ZMQ
+    LIBS += -lzmq
+    HEADERS +=     src/zmqabstractnotifier.h \
+    	src/zmqconfig.h \
+    	src/zmqnotificationinterface.h \
+    	src/zmqpublishnotifier.h \
+
+    SOURCES +=     src/zmqabstractnotifier.cpp \
+    	src/zmqnotificationinterface.cpp \
+    	src/zmqpublishnotifier.cpp \
+}
+
+contains(USE_ASSEMBLY, 1) {
+    message(Building with assembly support)
+    LIBS += $$PWD/src/rainbow18/librainbowpro_unix.a
+} else {
+    message(Building with Non-assembly support)
+    LIBS += $$PWD/src/rainbow18/librainbowpro_unix_p.a
+    TARGET = abcmint-qt-p
+}
+
 # use: qmake "USE_QRCODE=1"
 # libqrencode (http://fukuchi.org/works/qrencode/index.en.html) must be installed for support
-contains(USE_QRCODE, 1) {
-    message(Building with QRCode support)
-    DEFINES += USE_QRCODE
-    LIBS += -lqrencode
-}
+#contains(USE_QRCODE, 1) {
+#    message(Building with QRCode support)
+#    DEFINES += USE_QRCODE
+#    INCLUDEPATH += $$QRENCODE_INCLUDE_PATH
+#    LIBS += $$QRENCODE_LIB_PATH/libqrencode.a
+##    LIBS += -lqrencode
+#}
 
 # use: qmake "USE_UPNP=1" ( enabled by default; default)
 #  or: qmake "USE_UPNP=0" (disabled by default)
@@ -84,9 +120,12 @@ contains(USE_UPNP, -) {
     }
     DEFINES += USE_UPNP=$$USE_UPNP MINIUPNP_STATICLIB
     INCLUDEPATH += $$MINIUPNPC_INCLUDE_PATH
-    LIBS += $$join(MINIUPNPC_LIB_PATH,,-L,) -lminiupnpc
+    LIBS += $$MINIUPNPC_LIB_PATH/libminiupnpc.a
+#    LIBS += $$join(MINIUPNPC_LIB_PATH,,-L,) -lminiupnpc
     win32:LIBS += -liphlpapi
 }
+
+
 
 # use: qmake "USE_DBUS=1"
 contains(USE_DBUS, 1) {
@@ -110,6 +149,28 @@ contains(USE_IPV6, -) {
 contains(ABCMINT_NEED_QT_PLUGINS, 1) {
     DEFINES += ABCMINT_NEED_QT_PLUGINS
     QTPLUGIN += qcncodecs qjpcodecs qtwcodecs qkrcodecs qtaccessiblewidgets
+}
+
+contains(USE_GPU, -) {
+    message(Building without GPU mining)
+} else {
+    USE_GPU = 1
+    DEFINES += USE_GPU=$$USE_GPU
+    INCLUDEPATH +=/usr/local/cuda/include
+    LIBS += $$PWD/src/obj/libgpumining.a
+    #INCLUDEPATH += /usr/local/cuda/lib64
+    #LIBS += /usr/lib/x86_64-linux-gnu/libcudart_static.a
+    LIBS += /usr/local/cuda/lib64/libcudart_static.a
+    #LIBS += -L /usr/local/cuda/lib64 -lcudart
+
+    unix {
+        gengpumining.commands = cd $$PWD/src; $(MAKE) -f makefile-libgpumining.unix
+        QMAKE_CLEAN += $$PWD/src/obj/libgpumining.a; cd $$PWD/src; $(MAKE) -f makefile-libgpumining.unix clean
+    }
+    gengpumining.depends = FORCE
+    gengpumining.target = $$PWD/src/obj/libgpumining.a
+    QMAKE_EXTRA_TARGETS += gengpumining
+    PRE_TARGETDEPS += $$PWD/src/obj/libgpumining.a
 }
 
 INCLUDEPATH += src/leveldb/include src/leveldb/helpers
@@ -156,6 +217,7 @@ HEADERS += src/qt/abcmintgui.h \
     src/qt/aboutdialog.h \
     src/qt/editaddressdialog.h \
     src/qt/abcmintaddressvalidator.h \
+    src/validationinterface.h \
 	src/pqcrypto/api.h \
 	src/pqcrypto/blas_config.h \
 	src/pqcrypto/blas.h \
@@ -177,6 +239,7 @@ HEADERS += src/qt/abcmintgui.h \
 	src/pqcrypto/random.h \
 	src/pqcrypto/rng.h \
 	src/pqcrypto/sha256.h \
+	src/pqcrypto/sha384.h \
 	src/pqcrypto/sha512.h \
 	src/pqcrypto/ctaes.h \
 	src/pqcrypto/aes.h \
@@ -192,6 +255,7 @@ HEADERS += src/qt/abcmintgui.h \
     src/idxlut.h \
     src/serialize.h \
     src/main.h \
+    src/gpumining.h\
     src/miner.h \
 	src/diskpubkeypos.h\
     src/net.h \
@@ -264,6 +328,7 @@ SOURCES += src/qt/abcmint.cpp \
     src/qt/aboutdialog.cpp \
     src/qt/editaddressdialog.cpp \
     src/qt/abcmintaddressvalidator.cpp \
+    src/validationinterface.cpp \
 	src/pqcrypto/ctaes.cpp \
 	src/pqcrypto/aes.cpp \
 	src/pqcrypto/rijndael.cpp \
@@ -275,6 +340,7 @@ SOURCES += src/qt/abcmint.cpp \
 	src/pqcrypto/random.cpp \
 	src/pqcrypto/rng.cpp \
 	src/pqcrypto/sha256.cpp \
+	src/pqcrypto/sha384.cpp \
 	src/pqcrypto/sha512.cpp \
 	src/pqcrypto/sign.cpp \
     src/alert.cpp \
@@ -352,11 +418,11 @@ FORMS += src/qt/forms/sendcoinsdialog.ui \
     src/qt/forms/rpcconsole.ui \
     src/qt/forms/optionsdialog.ui
 
-contains(USE_QRCODE, 1) {
-HEADERS += src/qt/qrcodedialog.h
-SOURCES += src/qt/qrcodedialog.cpp
-FORMS += src/qt/forms/qrcodedialog.ui
-}
+#contains(USE_QRCODE, 1) {
+#HEADERS += src/qt/qrcodedialog.h
+#SOURCES += src/qt/qrcodedialog.cpp
+#FORMS += src/qt/forms/qrcodedialog.ui
+#}
 
 contains(ABCMINT_QT_TEST, 1) {
 SOURCES += src/qt/test/test_main.cpp \
@@ -374,7 +440,7 @@ CODECFORTR = UTF-8
 # for lrelease/lupdate
 # also add new translations to src/qt/abcmint.qrc under translations/
 TRANSLATIONS = $$files(src/qt/locale/abcmint_*.ts)
-
+#QMAKE_LRELEASE = /usr/lib/x86_64-linux-gnu/qt5/bin/lrelease
 isEmpty(QMAKE_LRELEASE) {
     win32:QMAKE_LRELEASE = $$[QT_INSTALL_BINS]\\lrelease.exe
     else:QMAKE_LRELEASE = $$[QT_INSTALL_BINS]/lrelease
@@ -444,7 +510,7 @@ win32:!contains(MINGW_THREAD_BUGFIX, 0) {
 
 !win32:!macx {
     DEFINES += LINUX
-    LIBS += -lrt
+    LIBS += -lrt -ldl
     # _FILE_OFFSET_BITS=64 lets 32-bit fopen transparently support large files.
     DEFINES += _FILE_OFFSET_BITS=64
 }
@@ -462,19 +528,29 @@ macx:QMAKE_CXXFLAGS_THREAD += -pthread
 macx:QMAKE_INFO_PLIST = share/qt/Info.plist
 
 # Set libraries and includes at end, to use platform-defined defaults if not overridden
+#QT_INCLUDE_PATH=/usr/include/x86_64-linux-gnu/qt5
 INCLUDEPATH += $$BOOST_INCLUDE_PATH $$BDB_INCLUDE_PATH $$OPENSSL_INCLUDE_PATH $$QRENCODE_INCLUDE_PATH $$QT_INCLUDE_PATH
-LIBS += $$join(BOOST_LIB_PATH,,-L,) $$join(BDB_LIB_PATH,,-L,) $$join(OPENSSL_LIB_PATH,,-L,) $$join(QRENCODE_LIB_PATH,,-L,) $$join(QRENCODE_LIB_PATH,,-L,)
-LIBS += -lssl -lcrypto  -ldb_cxx
+
+#LIBS += $$join(BOOST_LIB_PATH,,-L,) $$join(BDB_LIB_PATH,,-L,) $$join(OPENSSL_LIB_PATH,,-L,) $$join(QRENCODE_LIB_PATH,,-L,) $$join(QRENCODE_LIB_PATH,,-L,)
+#LIBS += -lssl -lcrypto  -ldb_cxx
 # -lgdi32 has to happen after -lcrypto (see  #681)
 win32:LIBS += -lws2_32 -lshlwapi -lmswsock -lole32 -loleaut32 -luuid -lgdi32
-LIBS += -lboost_system$$BOOST_LIB_SUFFIX -lboost_filesystem$$BOOST_LIB_SUFFIX -lboost_program_options$$BOOST_LIB_SUFFIX -lboost_thread$$BOOST_THREAD_LIB_SUFFIX
+#LIBS += -lboost_system$$BOOST_LIB_SUFFIX -lboost_filesystem$$BOOST_LIB_SUFFIX -lboost_program_options$$BOOST_LIB_SUFFIX -lboost_thread$$BOOST_THREAD_LIB_SUFFIX
 win32:LIBS += -lboost_chrono$$BOOST_LIB_SUFFIX
 macx:LIBS += -lboost_chrono$$BOOST_LIB_SUFFIX
+LIBS += $$BOOST_LIB_PATH/libboost_system.a  $$BOOST_LIB_PATH/libboost_filesystem.a  $$BOOST_LIB_PATH/libboost_program_options.a
+LIBS += $$BOOST_LIB_PATH/libboost_thread.a  $$BOOST_LIB_PATH/libboost_chrono.a
+LIBS += $$BDB_LIB_PATH/libdb_cxx.a
+LIBS += $$OPENSSL_LIB_PATH/libssl.a  $$OPENSSL_LIB_PATH/libcrypto.a
+#LIBS += $$PNG_LIB_PATH/libpng.a
+LIBS += $$UUID_LIB_PATH/libuuid.a
+
 
 contains(RELEASE, 1) {
     !win32:!macx {
         # Linux: turn dynamic linking back on for c/c++ runtime libraries
         LIBS += -Wl,-Bdynamic
+        LIBS += -ldl
     }
 }
 
