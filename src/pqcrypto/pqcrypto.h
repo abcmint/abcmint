@@ -79,7 +79,7 @@ enum {
 #include "sha256.h"
 //#include "sha224.h"
 #include "sha512.h"
-//#include "sha384.h"
+#include "sha384.h"
 //#include "sha1.h"
 #include "rng.h"
 #include "aes.h"
