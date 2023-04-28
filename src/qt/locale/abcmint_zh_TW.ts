@@ -127,6 +127,16 @@ This product includes software developed by the OpenSSL Project for use in the O
     </message>
     <message>
         <location line="+13"/>
+        <source>Copy &amp;Balances</source>
+        <translation>複製餘額</translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <source>Set &amp;DefaultKey</source>
+        <translation>設定預設位址</translation>
+    </message>
+    <message>
+        <location line="+13"/>
         <source>Copy &amp;Label</source>
         <translation>複製標記</translation>
     </message>
@@ -172,6 +182,16 @@ This product includes software developed by the OpenSSL Project for use in the O
         <location line="+0"/>
         <source>Address</source>
         <translation>位址</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Balances</source>
+        <translation>餘額</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>SignType</source>
+        <translation>簽署種類</translation>
     </message>
     <message>
         <location line="+36"/>
@@ -1327,6 +1347,24 @@ Address: %4
         <source>Confirm the send action</source>
         <translation>確認付款動作</translation>
     </message>
+
+
+    <message>
+        <location line="+13"/>
+        <source>Pay &amp;From:</source>
+        <translation>付方:</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Enter only when you need to specify the from address</source>
+        <translation>只有當需要指定付方地址時輸入</translation>
+    </message>
+    <message>
+        <location line="+28"/>
+        <source>Choose address from address book</source>
+        <translation>從位址簿中選一個位址</translation>
+    </message>
+
     <message>
         <location line="+3"/>
         <source>S&amp;end</source>
@@ -2279,7 +2317,7 @@ Address: %4
     </message>
     <message>
         <location line="+27"/>
-        <source>Listen for JSON-RPC connections on &lt;port&gt; (default: 8332 or testnet: 18332)</source>
+        <source>Listen for JSON-RPC connections on &lt;port&gt; ((default: 8882 or testnet: 18882))</source>
         <translation>在通訊埠 &lt;port&gt; 聽候 JSON-RPC 連線 (預設: 8332, 或若為測試網路: 18332)</translation>
     </message>
     <message>

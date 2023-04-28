@@ -2271,7 +2271,7 @@ Aadress: %4⏎</translation>
     </message>
     <message>
         <location line="+27"/>
-        <source>Listen for JSON-RPC connections on &lt;port&gt; (default: 8332 or testnet: 18332)</source>
+        <source>Listen for JSON-RPC connections on &lt;port&gt; ((default: 8882 or testnet: 18882))</source>
         <translation>Kuula JSON-RPC ühendusel seda porti &lt;port&gt; (vaikeväärtus: 8332 või testnet: 18332)</translation>
     </message>
     <message>

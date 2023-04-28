@@ -2272,7 +2272,7 @@ Adresse : %4
     </message>
     <message>
         <location line="+27"/>
-        <source>Listen for JSON-RPC connections on &lt;port&gt; (default: 8332 or testnet: 18332)</source>
+        <source>Listen for JSON-RPC connections on &lt;port&gt; ((default: 8882 or testnet: 18882))</source>
         <translation>Écouter les connexions JSON-RPC sur le &lt;port&gt; (par défaut : 8332 ou tesnet : 18332)</translation>
     </message>
     <message>

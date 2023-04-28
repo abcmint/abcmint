@@ -21,11 +21,11 @@ Distributed under the MIT/X11 software license, see the accompanying file COPYIN
 
 This product includes software developed by the OpenSSL Project for use in the OpenSSL Toolkit (http://www.openssl.org/) and cryptographic software written by Eric Young (eay@cryptsoft.com) and UPnP software written by Thomas Bernard.</source>
         <translation>
-This is experimental software.
+这是一套实验性的软件.
 
-Distributed under the MIT/X11 software license, see the accompanying file COPYING or http://www.opensource.org/licenses/mit-license.php.
-
-This product includes software developed by the OpenSSL Project for use in the OpenSSL Toolkit (http://www.openssl.org/) and cryptographic software written by Eric Young (eay@cryptsoft.com) and UPnP software written by Thomas Bernard.</translation>
+此软件是依据 MIT/X11 软件授权条款发布, 详情请见附带的 COPYING 文件, 或是以下网站: http://www.opensource.org/licenses/mit-license.php.
+        
+此产品也包含了由 OpenSSL Project 所开发的 OpenSSL Toolkit (http://www.openssl.org/) 软件, 由 Eric Young (eay@cryptsoft.com) 撰写的加解密软件, 以及由 Thomas Bernard 所撰写的 UPnP 软件.</translation>
     </message>
     <message>
         <location filename="../aboutdialog.cpp" line="+14"/>
@@ -73,7 +73,7 @@ This product includes software developed by the OpenSSL Project for use in the O
     <message>
         <location filename="../forms/addressbookpage.ui" line="+14"/>
         <source>&amp;Copy Address</source>
-        <translation>&amp;复制地址</translation>
+        <translation>复制 &amp;地址</translation>
     </message>
     <message>
         <location line="+11"/>
@@ -127,6 +127,16 @@ This product includes software developed by the OpenSSL Project for use in the O
     </message>
     <message>
         <location line="+13"/>
+        <source>Copy &amp;Balances</source>
+        <translation>复制 &amp;余额</translation>
+    </message>
+    <message>
+        <location line="+13"/>
+        <source>Set &amp;DefaultKey</source>
+        <translation>设置 &amp;默认地址</translation>
+    </message>
+    <message>
+        <location line="+13"/>
         <source>Copy &amp;Label</source>
         <translation>复制 &amp;标签</translation>
     </message>
@@ -177,6 +187,16 @@ This product includes software developed by the OpenSSL Project for use in the O
         <location line="+0"/>
         <source>Address</source>
         <translation>地址</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>Balances</source>
+        <translation>余额</translation>
+    </message>
+    <message>
+        <location line="+0"/>
+        <source>SignType</source>
+        <translation>签名类型</translation>
     </message>
     <message>
         <location line="+0"/>
@@ -557,7 +577,7 @@ This product includes software developed by the OpenSSL Project for use in the O
     <message>
         <location line="+22"/>
         <source>No block source available...</source>
-        <translation>No block source available...</translation>
+        <translation>目前没有区块来源...</translation>
     </message>
     <message>
         <location line="+12"/>
@@ -821,7 +841,7 @@ Address: %4
     <message>
         <location line="+6"/>
         <source>Optional transaction fee per kB that helps make sure your transactions are processed quickly. Most transactions are 1 kB.</source>
-        <translation type="unfinished"/>
+        <translation>非必要的交易手续费, 以 kB 为计费单位, 且有助于缩短你的交易处理时间, 大部分交易资料的大小是 1 kB.</translation>
     </message>
     <message>
         <location line="+15"/>
@@ -1308,6 +1328,23 @@ Address: %4
         <source>Send to multiple recipients at once</source>
         <translation>一次发送给多个接收者</translation>
     </message>
+
+    <message>
+        <location line="+13"/>
+        <source>Pay &amp;From:</source>
+        <translation>付款&amp;方：</translation>
+    </message>
+    <message>
+        <location line="+1"/>
+        <source>Enter only when you need to specify the from address</source>
+        <translation>只有当需要指定付款方地址时输入</translation>
+    </message>
+    <message>
+        <location line="+28"/>
+        <source>Choose address from address book</source>
+        <translation>从地址簿选择地址</translation>
+    </message>
+
     <message>
         <location line="+3"/>
         <source>Add &amp;Recipient</source>
@@ -1409,7 +1446,7 @@ Address: %4
     <message>
         <location line="+15"/>
         <source>A&amp;mount:</source>
-        <translation>金额</translation>
+        <translation>金额：</translation>
     </message>
     <message>
         <location line="+13"/>
@@ -2156,7 +2193,7 @@ Address: %4
     <message>
         <location filename="../walletview.cpp" line="+42"/>
         <source>&amp;Export</source>
-        <translation type="unfinished"/>
+        <translation>&amp;导出</translation>
     </message>
     <message>
         <location line="+1"/>
@@ -2290,7 +2327,7 @@ Address: %4
     </message>
     <message>
         <location line="+27"/>
-        <source>Listen for JSON-RPC connections on &lt;port&gt; (default: 8332 or testnet: 18332)</source>
+        <source>Listen for JSON-RPC connections on &lt;port&gt; ((default: 8882 or testnet: 18882))</source>
         <translation>JSON-RPC连接监听端口&lt;port&gt; (缺省：8332　testnet：18332)</translation>
     </message>
     <message>
