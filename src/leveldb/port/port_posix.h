@@ -38,7 +38,11 @@
   #include <endian.h>
   #define PLATFORM_IS_LITTLE_ENDIAN  (_BYTE_ORDER == _LITTLE_ENDIAN)
 #else
-  #include <endian.h>
+	#ifndef MINGW
+  	#include <endian.h>
+	#else
+	  #include "compat/endian.h"
+	#endif
 #endif
 
 #include <pthread.h>
