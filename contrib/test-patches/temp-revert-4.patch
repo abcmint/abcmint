@@ -35,7 +35,7 @@ index 51ada0a..9a06dbf 100644
 -
      // Check proof of work matches claimed amount
      if (fCheckPOW && !CheckProofOfWork(GetHash(), nBits))
-         return state.DoS(50, error("CheckBlock() : proof of work failed"));
+         return state.DoS(100, error("CheckBlock() : proof of work failed"));
 diff --git a/src/test/checkblock_tests.cpp b/src/test/checkblock_tests.cpp
 deleted file mode 100644
 index e167def..0000000
