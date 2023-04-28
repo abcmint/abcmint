@@ -66,7 +66,7 @@ public:
      */
     void refreshWallet()
     {
-        OutputDebugStringF("refreshWallet\n");
+        OutputDebugStringF("refreshWallet ++\n");
         cachedWallet.clear();
         {
             LOCK(wallet->cs_wallet);
@@ -76,6 +76,7 @@ public:
                     cachedWallet.append(TransactionRecord::decomposeTransaction(wallet, it->second));
             }
         }
+        OutputDebugStringF("refreshWallet --\n");
     }
 
     /* Update our model of the wallet incrementally, to synchronize our model of the wallet

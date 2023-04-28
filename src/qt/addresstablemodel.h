@@ -16,13 +16,15 @@ class AddressTableModel : public QAbstractTableModel
     Q_OBJECT
 
 public:
-    explicit AddressTableModel(CWallet *wallet, WalletModel *parent = 0);
+    explicit AddressTableModel(CWallet *wallet, WalletModel *parent = 0, const QString &type = Send);
     ~AddressTableModel();
 
     enum ColumnIndex {
         Label = 0,   /**< User specified label */
         Address = 1,  /**< Abcmint address */
-        Position = 2  /**< Abcmint public key position */
+        Balances = 2,
+        IsMiner = 2,
+        SignType = 3
     };
 
     enum RoleIndex {
@@ -70,6 +72,9 @@ public:
 
     EditStatus getEditStatus() const { return editStatus; }
 
+    bool setDefaultKey(const QString &address);
+    bool setMinerAddress(const QString &address);
+    QString getMinerAddress();
 private:
     WalletModel *walletModel;
     CWallet *wallet;
@@ -86,6 +91,8 @@ signals:
 public slots:
     /* Update address list from core.
      */
+
+    void refreshAddressTable();
     void updateEntry(const QString &address, const QString &label, bool isMine, int status);
 
     friend class AddressTablePriv;

@@ -36,6 +36,10 @@ AddressBookPage::AddressBookPage(Mode mode, Tabs tab, QWidget *parent) :
     ui->exportButton->setIcon(QIcon());
 #endif
 
+    ui->copyAddress->setVisible(false);
+    //ui->exportButton->setVisible(false);
+    ui->deleteAddress->setVisible(false);
+
 #ifndef USE_QRCODE
     ui->showQRCode->setVisible(false);
 #endif
@@ -55,56 +59,73 @@ AddressBookPage::AddressBookPage(Mode mode, Tabs tab, QWidget *parent) :
     switch(tab)
     {
     case SendingTab:
-        ui->labelExplanation->setText(tr("These are your  Abcmint addresses for sending payments. Always check the amount and the receiving address before sending coins."));
-        ui->deleteAddress->setVisible(true);
+        ui->labelExplanation->setText(tr("These are your Abcmint addresses for sending payments. Always check the amount and the receiving address before sending coins."));
+        ui->deleteAddress->setVisible(false);
         ui->signMessage->setVisible(false);
+        ui->verifyMessage->setVisible(false);
         break;
     case ReceivingTab:
-        ui->labelExplanation->setText(tr("These are your  Abcmint addresses for receiving payments. You may want to give a different one to each sender so you can keep track of who is paying you."));
+        ui->labelExplanation->setText(tr("These are your Abcmint addresses for receiving payments. You may want to give a different one to each sender so you can keep track of who is paying you."));
         ui->deleteAddress->setVisible(false);
         ui->signMessage->setVisible(true);
+        ui->verifyMessage->setVisible(true);
         break;
     }
 
     // Context menu actions
     QAction *copyAddressAction = new QAction(ui->copyAddress->text(), this);
     QAction *copyLabelAction = new QAction(tr("Copy &Label"), this);
-    QAction *copyPositionAction = new QAction(tr("Copy &Position"), this);
+    QAction *copyBalancesAction = new QAction(tr("Copy &Balances"), this);
+    QAction *setDefaultKeyAction = new QAction(tr("Set &DefaultKey"), this);
     QAction *editAction = new QAction(tr("&Edit"), this);
     QAction *sendCoinsAction = new QAction(tr("Send &Coins"), this);
+#ifdef USE_QRCODE
     QAction *showQRCodeAction = new QAction(ui->showQRCode->text(), this);
+#endif
     QAction *signMessageAction = new QAction(ui->signMessage->text(), this);
     QAction *verifyMessageAction = new QAction(ui->verifyMessage->text(), this);
     deleteAction = new QAction(ui->deleteAddress->text(), this);
 
     // Build context menu
     contextMenu = new QMenu();
-    contextMenu->addAction(copyAddressAction);
+    if(tab == SendingTab) {
+        QAction *setMinerAction = new QAction(tr("Set &Miner"), this);
+        contextMenu->addAction(setMinerAction);
+        connect(setMinerAction, SIGNAL(triggered()), this, SLOT(onSetMinerAction()));
+
+        QAction *cancelMinerAction = new QAction(tr("Cancel &Miner"), this);
+        contextMenu->addAction(cancelMinerAction);
+        connect(cancelMinerAction, SIGNAL(triggered()), this, SLOT(onCancelMinerAction()));
+    }
     contextMenu->addAction(copyLabelAction);
-    /*if(tab == ReceivingTab)
-        contextMenu->addAction(copyPositionAction);*/
-    contextMenu->addAction(editAction);
-    if(tab == SendingTab)
-        contextMenu->addAction(deleteAction);
-    contextMenu->addSeparator();
-    if(tab == SendingTab)
+    contextMenu->addAction(copyAddressAction);
+    //contextMenu->addSeparator();
+
+    if(tab == ReceivingTab) {
+        contextMenu->addAction(copyBalancesAction);
+        contextMenu->addAction(setDefaultKeyAction);
+    }
+    if(tab == SendingTab) {
         contextMenu->addAction(sendCoinsAction);
+        contextMenu->addAction(deleteAction);
+    }
+    contextMenu->addAction(editAction);
+
 #ifdef USE_QRCODE
     contextMenu->addAction(showQRCodeAction);
 #endif
-    if(tab == ReceivingTab)
-        contextMenu->addAction(signMessageAction);
-    else if(tab == SendingTab)
-        contextMenu->addAction(verifyMessageAction);
 
     // Connect signals for context menu actions
     connect(copyAddressAction, SIGNAL(triggered()), this, SLOT(on_copyAddress_clicked()));
     connect(copyLabelAction, SIGNAL(triggered()), this, SLOT(onCopyLabelAction()));
-    connect(copyPositionAction, SIGNAL(triggered()), this, SLOT(onCopyPositionAction()));
+    connect(copyBalancesAction, SIGNAL(triggered()), this, SLOT(onCopyBalancesAction()));
+    connect(setDefaultKeyAction, SIGNAL(triggered()), this, SLOT(onSetDefaultKeyAction()));
     connect(editAction, SIGNAL(triggered()), this, SLOT(onEditAction()));
     connect(deleteAction, SIGNAL(triggered()), this, SLOT(on_deleteAddress_clicked()));
     connect(sendCoinsAction, SIGNAL(triggered()), this, SLOT(onSendCoinsAction()));
+#ifdef USE_QRCODE
     connect(showQRCodeAction, SIGNAL(triggered()), this, SLOT(on_showQRCode_clicked()));
+#endif
     connect(signMessageAction, SIGNAL(triggered()), this, SLOT(on_signMessage_clicked()));
     connect(verifyMessageAction, SIGNAL(triggered()), this, SLOT(on_verifyMessage_clicked()));
 
@@ -148,23 +169,29 @@ void AddressBookPage::setModel(AddressTableModel *model)
 
             // Set column widths
 #if QT_VERSION < 0x050000
-            ui->tableView->horizontalHeader()->setResizeMode(AddressTableModel::Label, QHeaderView::Stretch);
-            ui->tableView->horizontalHeader()->setResizeMode(AddressTableModel::Address, QHeaderView::ResizeToContents);
-#else
-            ui->tableView->horizontalHeader()->setSectionResizeMode(AddressTableModel::Label, QHeaderView::Stretch);
-            ui->tableView->horizontalHeader()->setSectionResizeMode(AddressTableModel::Address, QHeaderView::ResizeToContents);
-#endif
-#if 0
+    ui->tableView->horizontalHeader()->setResizeMode(AddressTableModel::Label, QHeaderView::ResizeToContents);
+    ui->tableView->horizontalHeader()->setResizeMode(AddressTableModel::Address, QHeaderView::Stretch);
+
     if (tab == ReceivingTab) {
-            // Set column widths
-#if QT_VERSION < 0x050000
-            ui->tableView->horizontalHeader()->setResizeMode(AddressTableModel::Position, QHeaderView::ResizeToContents);
+        ui->tableView->horizontalHeader()->setResizeMode(AddressTableModel::Balances, QHeaderView::ResizeToContents);
+        ui->tableView->horizontalHeader()->setResizeMode(AddressTableModel::SignType, QHeaderView::ResizeToContents);
+    }
+    else if (tab == SendingTab) {
+        ui->tableView->horizontalHeader()->setResizeMode(AddressTableModel::IsMiner, QHeaderView::ResizeToContents);
+    }
 #else
-            ui->tableView->horizontalHeader()->setSectionResizeMode(AddressTableModel::Position, QHeaderView::ResizeToContents);
+    ui->tableView->horizontalHeader()->setSectionResizeMode(AddressTableModel::Label, QHeaderView::ResizeToContents);
+    ui->tableView->horizontalHeader()->setSectionResizeMode(AddressTableModel::Address, QHeaderView::Stretch);
+
+    if (tab == ReceivingTab) {
+        ui->tableView->horizontalHeader()->setSectionResizeMode(AddressTableModel::Balances, QHeaderView::ResizeToContents);
+        ui->tableView->horizontalHeader()->setSectionResizeMode(AddressTableModel::SignType, QHeaderView::ResizeToContents);
+    }
+    else if (tab == SendingTab) {
+        ui->tableView->horizontalHeader()->setSectionResizeMode(AddressTableModel::IsMiner, QHeaderView::ResizeToContents);
+    }
 #endif
-    } else
-        ui->tableView->horizontalHeader()->setSectionHidden(AddressTableModel::Position, true);
-#endif
+
     connect(ui->tableView->selectionModel(), SIGNAL(selectionChanged(QItemSelection,QItemSelection)),
             this, SLOT(selectionChanged()));
 
@@ -189,9 +216,53 @@ void AddressBookPage::onCopyLabelAction()
     GUIUtil::copyEntryData(ui->tableView, AddressTableModel::Label);
 }
 
-void AddressBookPage::onCopyPositionAction()
+void AddressBookPage::onCopyBalancesAction()
 {
-    GUIUtil::copyEntryData(ui->tableView, AddressTableModel::Position);
+    GUIUtil::copyEntryData(ui->tableView, AddressTableModel::Balances);
+}
+
+void AddressBookPage::onSetDefaultKeyAction()
+{
+    QTableView *table = ui->tableView;
+    QModelIndexList indexes = table->selectionModel()->selectedRows(AddressTableModel::Address);
+    if (!indexes.isEmpty())
+    {
+        QModelIndex index = indexes[0];
+        QString address = index.data().toString();
+        bool bret = model->setDefaultKey(address);
+        if (bret) {
+            QMessageBox::information(this, tr("Default Key"), tr("Setting default Key succeeded."), QMessageBox::Ok, QMessageBox::Ok);
+        } else {
+            QMessageBox::warning(this, tr("Default Key"), tr("Failed to set default Key."), QMessageBox::Ok, QMessageBox::Ok);
+        }
+    }
+}
+
+void AddressBookPage::onSetMinerAction()
+{
+    QTableView *table = ui->tableView;
+    QModelIndexList indexes = table->selectionModel()->selectedRows(AddressTableModel::Address);
+    if (!indexes.isEmpty())
+    {
+        QModelIndex index = indexes[0];
+        QString address = index.data().toString();
+        bool bret = model->setMinerAddress(address);
+        if (bret) {
+            QMessageBox::information(this, tr("Miner address"), tr("Setting miner address succeeded."), QMessageBox::Ok, QMessageBox::Ok);
+        } else {
+            QMessageBox::warning(this, tr("Miner address"), tr("Failed to set miner address."), QMessageBox::Ok, QMessageBox::Ok);
+        }
+    }
+}
+
+void AddressBookPage::onCancelMinerAction()
+{
+    bool bret = model->setMinerAddress("");
+    if (bret) {
+        QMessageBox::information(this, tr("Miner address"), tr("Cancel miner address succeeded."), QMessageBox::Ok, QMessageBox::Ok);
+    } else {
+        QMessageBox::warning(this, tr("Miner address"), tr("Failed to cancel miner address."), QMessageBox::Ok, QMessageBox::Ok);
+    }
 }
 
 void AddressBookPage::onEditAction()
@@ -270,10 +341,17 @@ void AddressBookPage::on_deleteAddress_clicked()
     if(!table->selectionModel())
         return;
 
-    QModelIndexList indexes = table->selectionModel()->selectedRows();
+    QModelIndexList indexes = table->selectionModel()->selectedRows(AddressTableModel::Address);
     if(!indexes.isEmpty())
     {
-        table->model()->removeRow(indexes.at(0).row());
+        QModelIndex index = indexes[0];
+        QString address = index.data().toString();
+        QString minerAddr = model->getMinerAddress();
+        if (0 == address.compare(minerAddr)) {
+            QMessageBox::information(this, tr("Miner address"), tr(" This is an miner address and can't be deleted."), QMessageBox::Ok, QMessageBox::Ok);
+        } else {
+            table->model()->removeRow(indexes.at(0).row());
+        }
     }
 }
 
@@ -290,13 +368,13 @@ void AddressBookPage::selectionChanged()
         {
         case SendingTab:
             // In sending tab, allow deletion of selection
-            ui->deleteAddress->setEnabled(true);
-            ui->deleteAddress->setVisible(true);
+            ui->deleteAddress->setEnabled(false);
+            ui->deleteAddress->setVisible(false);
             deleteAction->setEnabled(true);
             ui->signMessage->setEnabled(false);
             ui->signMessage->setVisible(false);
-            ui->verifyMessage->setEnabled(true);
-            ui->verifyMessage->setVisible(true);
+            ui->verifyMessage->setEnabled(false);
+            ui->verifyMessage->setVisible(false);
             break;
         case ReceivingTab:
             // Deleting receiving addresses, however, is not allowed
@@ -305,12 +383,12 @@ void AddressBookPage::selectionChanged()
             deleteAction->setEnabled(false);
             ui->signMessage->setEnabled(true);
             ui->signMessage->setVisible(true);
-            ui->verifyMessage->setEnabled(false);
-            ui->verifyMessage->setVisible(false);
+            ui->verifyMessage->setEnabled(true);
+            ui->verifyMessage->setVisible(true);
             break;
         }
         ui->copyAddress->setEnabled(true);
-        ui->showQRCode->setEnabled(true);
+        ui->showQRCode->setEnabled(false);
     }
     else
     {
@@ -365,6 +443,12 @@ void AddressBookPage::on_exportButton_clicked()
     writer.setModel(proxyModel);
     writer.addColumn("Label", AddressTableModel::Label, Qt::EditRole);
     writer.addColumn("Address", AddressTableModel::Address, Qt::EditRole);
+    if (tab == ReceivingTab) {
+        writer.addColumn("Balances", AddressTableModel::Balances, Qt::EditRole);
+        writer.addColumn("SignType", AddressTableModel::SignType, Qt::EditRole);
+    } else if (tab == SendingTab) {
+        writer.addColumn("IsMiner", AddressTableModel::IsMiner, Qt::EditRole);
+    }
 
     if(!writer.write())
     {

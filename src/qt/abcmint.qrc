@@ -78,7 +78,7 @@
         <file alias="hr">locale/abcmint_hr.qm</file>
         <file alias="hu">locale/abcmint_hu.qm</file>
         <file alias="it">locale/abcmint_it.qm</file>
-        <file alias="ja">locale/abcmint_ja.ts</file>
+        <file alias="ja">locale/abcmint_ja.qm</file>
         <file alias="la">locale/abcmint_la.ts</file>
         <file alias="lt">locale/abcmint_lt.qm</file>
         <file alias="lv_LV">locale/abcmint_lv_LV.ts</file>

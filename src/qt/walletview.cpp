@@ -50,7 +50,6 @@ WalletView::WalletView(QWidget *parent, AbcmintGUI *_gui):
     transactionsPage->setLayout(vbox);
 
     addressBookPage = new AddressBookPage(AddressBookPage::ForEditing, AddressBookPage::SendingTab);
-
     receiveCoinsPage = new AddressBookPage(AddressBookPage::ForEditing, AddressBookPage::ReceivingTab);
 
     sendCoinsPage = new SendCoinsDialog(gui);
@@ -72,11 +71,14 @@ WalletView::WalletView(QWidget *parent, AbcmintGUI *_gui):
 
     // Clicking on "Send Coins" in the address book sends you to the send coins tab
     connect(addressBookPage, SIGNAL(sendCoins(QString)), this, SLOT(gotoSendCoinsPage(QString)));
+	
     // Clicking on "Verify Message" in the address book opens the verify message tab in the Sign/Verify Message dialog
-    connect(addressBookPage, SIGNAL(verifyMessage(QString)), this, SLOT(gotoVerifyMessageTab(QString)));
+    connect(receiveCoinsPage, SIGNAL(verifyMessage(QString)), this, SLOT(gotoVerifyMessageTab(QString)));
+
     // Clicking on "Sign Message" in the receive coins page opens the sign message tab in the Sign/Verify Message dialog
     connect(receiveCoinsPage, SIGNAL(signMessage(QString)), this, SLOT(gotoSignMessageTab(QString)));
-    // Clicking on "Export" allows to export the transaction list
+    
+	// Clicking on "Export" allows to export the transaction list
     connect(exportButton, SIGNAL(clicked()), transactionView, SLOT(exportClicked()));
 
     gotoOverviewPage();
@@ -113,8 +115,10 @@ void WalletView::setWalletModel(WalletModel *walletModel)
         // Put transaction list in tabs
         transactionView->setModel(walletModel);
         overviewPage->setWalletModel(walletModel);
-        addressBookPage->setModel(walletModel->getAddressTableModel());
+
+        addressBookPage->setModel(walletModel->getSendAddressTableModel());
         receiveCoinsPage->setModel(walletModel->getAddressTableModel());
+        
         sendCoinsPage->setModel(walletModel);
         signVerifyMessageDialog->setModel(walletModel);
 

@@ -33,7 +33,7 @@ private:
 private slots:
     /* sign message */
     void on_addressBookButton_SM_clicked();
-    void on_pasteButton_SM_clicked();
+    //void on_pasteButton_SM_clicked();
     void on_signMessageButton_SM_clicked();
     void on_copySignatureButton_SM_clicked();
     void on_clearButton_SM_clicked();

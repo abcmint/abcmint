@@ -34,9 +34,10 @@ QString AbcmintUnits::name(int unit)
 {
     switch(unit)
     {
-    case ABC: return QString("ABC");
-    case mABC: return QString("mABC");
-    case uABC: return QString::fromUtf8("μABC");
+    case ABC: return QString("ABC(RAQ)");
+    case mABC: return QString("mABC(mRAQ)");
+    case uABC: return QString::fromUtf8("μABC(μRAQ)");
+
     default: return QString("???");
     }
 }

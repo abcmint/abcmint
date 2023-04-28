@@ -43,6 +43,9 @@ SignVerifyMessageDialog::SignVerifyMessageDialog(QWidget *parent) :
 
     ui->signatureOut_SM->setFont(GUIUtil::abcmintAddressFont());
     ui->signatureIn_VM->setFont(GUIUtil::abcmintAddressFont());
+
+    ui->signatureOut_SM->setMaxLength(70000);
+    ui->signatureIn_VM->setMaxLength(70000);
 }
 
 SignVerifyMessageDialog::~SignVerifyMessageDialog()
@@ -95,10 +98,10 @@ void SignVerifyMessageDialog::on_addressBookButton_SM_clicked()
     }
 }
 
-void SignVerifyMessageDialog::on_pasteButton_SM_clicked()
+/*void SignVerifyMessageDialog::on_pasteButton_SM_clicked()
 {
     setAddress_SM(QApplication::clipboard()->text());
-}
+}*/
 
 void SignVerifyMessageDialog::on_signMessageButton_SM_clicked()
 {
@@ -142,8 +145,16 @@ void SignVerifyMessageDialog::on_signMessageButton_SM_clicked()
     ss << strMessageMagic;
     ss << ui->messageIn_SM->document()->toPlainText().toStdString();
 
+    int pubkeyIndex = key.GetPubKey().getPubKeyIndex();
+    if (-1 == pubkeyIndex) {
+        ui->statusLabel_SM->setStyleSheet("QLabel { color: red; }");
+        ui->statusLabel_SM->setText(QString("<nobr>") + tr("Message signing failed.") + QString("</nobr>"));
+        return;
+    }
+    std::vector<unsigned char> tmpHash = HashPro(pubkeyIndex, ss.begin(), ss.end());
+
     std::vector<unsigned char> vchSig;
-    if (!key.Sign(Hash(ss.begin(), ss.end()), vchSig))
+    if (!key.Sign(pubkeyIndex, tmpHash.data(), tmpHash.size(), vchSig, true))
     {
         ui->statusLabel_SM->setStyleSheet("QLabel { color: red; }");
         ui->statusLabel_SM->setText(QString("<nobr>") + tr("Message signing failed.") + QString("</nobr>"));
@@ -175,7 +186,7 @@ void SignVerifyMessageDialog::on_addressBookButton_VM_clicked()
 {
     if (model && model->getAddressTableModel())
     {
-        AddressBookPage dlg(AddressBookPage::ForSending, AddressBookPage::SendingTab, this);
+        AddressBookPage dlg(AddressBookPage::ForSending, AddressBookPage::ReceivingTab, this);
         dlg.setModel(model->getAddressTableModel());
         if (dlg.exec())
         {
@@ -215,6 +226,14 @@ void SignVerifyMessageDialog::on_verifyMessageButton_VM_clicked()
         return;
     }
 
+    WalletModel::UnlockContext ctx(model->requestUnlock());
+    if (!ctx.isValid())
+    {
+        ui->statusLabel_VM->setStyleSheet("QLabel { color: red; }");
+        ui->statusLabel_VM->setText(tr("Wallet unlock was cancelled."));
+        return;
+    }
+
     CDataStream ss(SER_GETHASH, 0);
     ss << strMessageMagic;
     ss << ui->messageIn_VM->document()->toPlainText().toStdString();
@@ -227,7 +246,15 @@ void SignVerifyMessageDialog::on_verifyMessageButton_VM_clicked()
         return;
     }
 
-    if (!key.GetPubKey().Verify(Hash(ss.begin(), ss.end()), vchSig))
+    int pubkeyIndex = key.GetPubKey().getPubKeyIndex();
+    if (-1 == pubkeyIndex) {
+        ui->statusLabel_VM->setStyleSheet("QLabel { color: red; }");
+        ui->statusLabel_VM->setText(QString("<nobr>") + tr("Message verification failed.") + QString("</nobr>"));
+        return;
+    }
+
+    std::vector<unsigned char> tmpHash = HashPro(pubkeyIndex, ss.begin(), ss.end());
+    if (!key.GetPubKey().Verify(pubkeyIndex, tmpHash.data(), tmpHash.size(), vchSig.data(), vchSig.size(), true))
     {
         ui->statusLabel_VM->setStyleSheet("QLabel { color: red; }");
         ui->statusLabel_VM->setText(QString("<nobr>") + tr("Message verification failed.") + QString("</nobr>"));

@@ -38,6 +38,7 @@ public slots:
     void reject();
     void accept();
     SendCoinsEntry *addEntry();
+    void OnTextChanged();
     void updateRemoveEnabled();
     void setBalance(qint64 balance, qint64 unconfirmedBalance, qint64 immatureBalance);
 
@@ -50,6 +51,7 @@ private slots:
     void on_sendButton_clicked();
     void removeEntry(SendCoinsEntry* entry);
     void updateDisplayUnit();
+    void on_fromAddressBookButton_clicked();
 };
 
 #endif // SENDCOINSDIALOG_H

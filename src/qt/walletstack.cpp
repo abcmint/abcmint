@@ -26,8 +26,9 @@ WalletStack::~WalletStack()
 
 bool WalletStack::addWallet(const QString& name, WalletModel *walletModel)
 {
-    if (!gui || !clientModel || mapWalletViews.count(name) > 0)
+    if (!gui || !clientModel || mapWalletViews.count(name) > 0) {
         return false;
+    }
 
     WalletView *walletView = new WalletView(this, gui);
     walletView->setAbcmintGUI(gui);

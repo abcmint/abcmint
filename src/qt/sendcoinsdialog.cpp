@@ -31,8 +31,30 @@ SendCoinsDialog::SendCoinsDialog(QWidget *parent) :
 
     connect(ui->addButton, SIGNAL(clicked()), this, SLOT(addEntry()));
     connect(ui->clearButton, SIGNAL(clicked()), this, SLOT(clear()));
+    connect(ui->payFrom, SIGNAL(textChanged(QString)), this, SLOT(OnTextChanged()));
 
     fNewRecipientAllowed = true;
+
+#ifdef Q_OS_MAC
+    ui->payFromLayout->setSpacing(4);
+#endif
+#if QT_VERSION >= 0x040700
+    ui->payFrom->setPlaceholderText(tr("Enter only when you need to specify the from address"));
+#endif
+    GUIUtil::setupAddressWidget(ui->payFrom, this);
+}
+
+void SendCoinsDialog::on_fromAddressBookButton_clicked()
+{
+    if(!model)
+        return;
+        
+    AddressBookPage dlg(AddressBookPage::ForSending, AddressBookPage::ReceivingTab, this);
+    dlg.setModel(model->getAddressTableModel());
+    if(dlg.exec())
+    {
+        ui->payFrom->setText(dlg.getReturnValue());
+    }
 }
 
 void SendCoinsDialog::setModel(WalletModel *model)
@@ -98,10 +120,19 @@ void SendCoinsDialog::on_sendButton_clicked()
 
     fNewRecipientAllowed = false;
 
-    QMessageBox::StandardButton retval = QMessageBox::question(this, tr("Confirm send coins"),
+    QMessageBox::StandardButton retval;
+    QString fromAddress = ui->payFrom->text();
+    if (fromAddress.isEmpty()) {
+        retval = QMessageBox::question(this, tr("Confirm send coins"),
                           tr("Are you sure you want to send %1?").arg(formatted.join(tr(" and "))),
           QMessageBox::Yes|QMessageBox::Cancel,
           QMessageBox::Cancel);
+    } else {
+        retval = QMessageBox::question(this, tr("Confirm send coins"),
+                          tr("Are you sure you want from %1 to send %2?").arg(fromAddress, formatted.join(tr(" and "))),
+          QMessageBox::Yes|QMessageBox::Cancel,
+          QMessageBox::Cancel);
+    }
 
     if(retval != QMessageBox::Yes)
     {
@@ -117,9 +148,15 @@ void SendCoinsDialog::on_sendButton_clicked()
         return;
     }
 
-    WalletModel::SendCoinsReturn sendstatus = model->sendCoins(recipients);
+    WalletModel::SendCoinsReturn sendstatus = model->sendCoins(recipients, fromAddress);
+
     switch(sendstatus.status)
     {
+    case WalletModel::InvalidFromAddress:
+        QMessageBox::warning(this, tr("Send Coins"),
+            tr("The sender address is not valid, please recheck."),
+            QMessageBox::Ok, QMessageBox::Ok);
+        break;
     case WalletModel::InvalidAddress:
         QMessageBox::warning(this, tr("Send Coins"),
             tr("The recipient address is not valid, please recheck."),
@@ -177,6 +214,8 @@ void SendCoinsDialog::clear()
     updateRemoveEnabled();
 
     ui->sendButton->setDefault(true);
+
+    ui->payFrom->clear();
 }
 
 void SendCoinsDialog::reject()
@@ -226,6 +265,7 @@ void SendCoinsDialog::updateRemoveEnabled()
 
 void SendCoinsDialog::removeEntry(SendCoinsEntry* entry)
 {
+    ui->entries->removeWidget(entry);
     entry->deleteLater();
     updateRemoveEnabled();
 }
@@ -308,18 +348,37 @@ void SendCoinsDialog::setBalance(qint64 balance, qint64 unconfirmedBalance, qint
 {
     Q_UNUSED(unconfirmedBalance);
     Q_UNUSED(immatureBalance);
-    if(!model || !model->getOptionsModel())
+    /*if(!model || !model->getOptionsModel())
         return;
 
     int unit = model->getOptionsModel()->getDisplayUnit();
-    ui->labelBalance->setText(AbcmintUnits::formatWithUnit(unit, balance));
+    ui->labelBalance->setText(AbcmintUnits::formatWithUnit(unit, balance));*/
+    Q_UNUSED(balance);
+    OnTextChanged();
 }
 
 void SendCoinsDialog::updateDisplayUnit()
 {
-    if(model && model->getOptionsModel())
+    /*if(model && model->getOptionsModel())
     {
-        // Update labelBalance with the current balance and the current unit
         ui->labelBalance->setText(AbcmintUnits::formatWithUnit(model->getOptionsModel()->getDisplayUnit(), model->getBalance()));
+    }*/
+    OnTextChanged();
+}
+
+void SendCoinsDialog::OnTextChanged()
+{
+    if(!model || !model->getOptionsModel())
+        return;
+
+    QString fromAddress = ui->payFrom->text();
+    if(fromAddress.isEmpty()) {
+        ui->labelBalance->setText(AbcmintUnits::formatWithUnit(model->getOptionsModel()->getDisplayUnit(), model->getBalance()));
+    } else {
+        if (model->validateAddress(fromAddress)) {
+            ui->labelBalance->setText(AbcmintUnits::formatWithUnit(model->getOptionsModel()->getDisplayUnit(), model->getBalance(fromAddress)));
+        } else {
+            ui->labelBalance->setText(AbcmintUnits::formatWithUnit(model->getOptionsModel()->getDisplayUnit(), 0));
+        }
     }
 }

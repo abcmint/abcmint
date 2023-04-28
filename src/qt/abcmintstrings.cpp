@@ -49,7 +49,7 @@ QT_TRANSLATE_NOOP("abcmint-core", ""
 "Execute command when the best block changes (%s in cmd is replaced by block "
 "hash)"),
 QT_TRANSLATE_NOOP("abcmint-core", ""
-"Listen for JSON-RPC connections on <port> (default: 8332 or testnet: 18332)"),
+"Listen for JSON-RPC connections on <port> ((default: 8882 or testnet: 18882))"),
 QT_TRANSLATE_NOOP("abcmint-core", ""
 "Number of seconds to keep misbehaving peers from reconnecting (default: "
 "86400)"),

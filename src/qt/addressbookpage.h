@@ -73,8 +73,12 @@ private slots:
     void on_showQRCode_clicked();
     /** Copy label of currently selected address entry to clipboard (no button) */
     void onCopyLabelAction();
-    /** Copy position of currently selected address entry to clipboard (no button) */
-    void onCopyPositionAction();
+    
+    void onCopyBalancesAction();
+    void onSetDefaultKeyAction();
+    void onSetMinerAction();
+    void onCancelMinerAction();
+
     /** Edit currently selected address entry (no button) */
     void onEditAction();
     /** Export button clicked */

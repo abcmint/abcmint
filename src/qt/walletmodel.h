@@ -35,6 +35,7 @@ public:
     {
         OK,
         InvalidAmount,
+        InvalidFromAddress,
         InvalidAddress,
         AmountExceedsBalance,
         AmountWithFeeExceedsBalance,
@@ -53,9 +54,10 @@ public:
 
     OptionsModel *getOptionsModel();
     AddressTableModel *getAddressTableModel();
+    AddressTableModel *getSendAddressTableModel();
     TransactionTableModel *getTransactionTableModel();
 
-    qint64 getBalance() const;
+    qint64 getBalance(const QString &fromAddress = "") const;
     qint64 getUnconfirmedBalance() const;
     qint64 getImmatureBalance() const;
     int getNumTransactions() const;
@@ -77,7 +79,7 @@ public:
     };
 
     // Send coins to a list of recipients
-    SendCoinsReturn sendCoins(const QList<SendCoinsRecipient> &recipients);
+    SendCoinsReturn sendCoins(const QList<SendCoinsRecipient> &recipients, const QString &fromAddress = "");
 
     // Wallet encryption
     bool setWalletEncrypted(bool encrypted, const SecureString &passphrase);
@@ -117,6 +119,7 @@ private:
     OptionsModel *optionsModel;
 
     AddressTableModel *addressTableModel;
+    AddressTableModel *sendAddressTableModel;
     TransactionTableModel *transactionTableModel;
 
     // Cache some values to be able to detect changes
@@ -154,6 +157,7 @@ signals:
 public slots:
     /* Wallet status might have changed */
     void updateStatus();
+    void refreshAddressTable();
     /* New transaction, or transaction changed status */
     void updateTransaction(const QString &hash, int status);
     /* New, updated or removed address book entry */

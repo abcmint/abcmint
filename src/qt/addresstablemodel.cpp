@@ -8,6 +8,9 @@
 
 #include <QFont>
 
+#include "optionsmodel.h"
+#include "abcmintunits.h"
+
 const QString AddressTableModel::Send = "S";
 const QString AddressTableModel::Receive = "R";
 
@@ -21,11 +24,13 @@ struct AddressTableEntry
     Type type;
     QString label;
     QString address;
-    QString postion;
+    qint64 balances;
+    QString signType;
+    bool isMiner;
 
     AddressTableEntry() {}
-    AddressTableEntry(Type type, const QString &label, const QString &address, const QString &postion = ""):
-        type(type), label(label), address(address), postion(postion) {}
+    AddressTableEntry(Type type, const QString &label, const QString &address, const qint64 &balances, const QString &signType, const bool &isMiner=false):
+        type(type), label(label), address(address), balances(balances), signType(signType), isMiner(isMiner) {}
 };
 
 struct AddressTableEntryLessThan
@@ -55,6 +60,27 @@ public:
     AddressTablePriv(CWallet *wallet, AddressTableModel *parent):
         wallet(wallet), parent(parent) {}
 
+    QString getSignTypeName(const CAbcmintAddress& address) {
+        char choised_sign_name[32] = {0};
+        CKeyID keyid;
+        if (address.GetKeyID(keyid)) {
+            CPubKey pubkey;
+            if (wallet->GetPubKey(keyid, pubkey)) {
+                int config_value = pubkey.getPubKeyIndex();
+                if (config_value >= 0) {
+                    get_choised_config_from_config_value(config_value, choised_sign_name);    
+                }
+            }
+        }
+
+        QString signTypeName = choised_sign_name;
+        if (address.ToString() == CAbcmintAddress(wallet->vchDefaultKey.GetID()).ToString()) {
+            signTypeName += "-default";
+        }
+
+        return signTypeName;
+    }
+
     void refreshAddressTable()
     {
         cachedAddressTable.clear();
@@ -65,14 +91,24 @@ public:
                 const CAbcmintAddress& address = item.first;
                 const std::string& strName = item.second;
                 bool fMine = IsMine(*wallet, address.Get());
-                std::string strPos;
-                CDiskPubKeyPos pos;
-                if (wallet->GetPubKeyPos(address.ToString(), pos))
-                    strPos = HexStr(pos.ToVector());
+
+                qint64 bal = 0;
+                QString signType = "";
+                bool isMiner = false;
+                if (fMine) {
+                    bal = wallet->GetBalance(address.ToString());
+                    
+                    signType = getSignTypeName(address);
+                } else {
+                    if (address.ToString() == wallet->vchMinerAddress) {
+                        isMiner = true;
+                    }
+                }
+
                 cachedAddressTable.append(AddressTableEntry(fMine ? AddressTableEntry::Receiving : AddressTableEntry::Sending,
-                                  QString::fromStdString(strName),
-                                  QString::fromStdString(address.ToString()),
-                                  QString::fromStdString(strPos)));
+                    QString::fromStdString(strName), QString::fromStdString(address.ToString()),
+                    bal, signType, isMiner
+                ));
             }
         }
         // qLowerBound() and qUpperBound() require our cachedAddressTable list to be sorted in asc order
@@ -91,10 +127,20 @@ public:
         bool inModel = (lower != upper);
         AddressTableEntry::Type newEntryType = isMine ? AddressTableEntry::Receiving : AddressTableEntry::Sending;
 
-        std::string strPos;
-        CDiskPubKeyPos pos;
-        if (wallet->GetPubKeyPos(address.toStdString(), pos))
-            strPos = HexStr(pos.ToVector());
+        qint64 bal = 0;
+        QString signType = "";
+        bool isMiner = false;
+        std::string strAddress = address.toStdString();
+        if (isMine && (status == CT_NEW || status == CT_UPDATED)) {
+            bal = wallet->GetBalance(strAddress);
+
+            CAbcmintAddress abcAddress(strAddress);
+            signType = getSignTypeName(abcAddress);
+        } else if (!isMine) {
+            if (strAddress == wallet->vchMinerAddress) {
+                isMiner = true;
+            }
+        }
 
         switch(status)
         {
@@ -105,7 +151,7 @@ public:
                 break;
             }
             parent->beginInsertRows(QModelIndex(), lowerIndex, lowerIndex);
-            cachedAddressTable.insert(lowerIndex, AddressTableEntry(newEntryType, label, address, QString::fromStdString(strPos)));
+            cachedAddressTable.insert(lowerIndex, AddressTableEntry(newEntryType, label, address, bal, signType, isMiner));
             parent->endInsertRows();
             break;
         case CT_UPDATED:
@@ -116,7 +162,10 @@ public:
             }
             lower->type = newEntryType;
             lower->label = label;
-            lower->postion = QString::fromStdString(strPos);
+            lower->balances = bal;
+            lower->signType = signType;
+            lower->isMiner = isMiner;
+
             parent->emitDataChanged(lowerIndex);
             break;
         case CT_DELETED:
@@ -150,10 +199,15 @@ public:
     }
 };
 
-AddressTableModel::AddressTableModel(CWallet *wallet, WalletModel *parent) :
+AddressTableModel::AddressTableModel(CWallet *wallet, WalletModel *parent, const QString &type) :
     QAbstractTableModel(parent),walletModel(parent),wallet(wallet),priv(0)
 {
-    columns << tr("Label") << tr("Address")/*<< tr("Position")*/;
+    if (type == Receive) {
+        columns << tr("Label") << tr("Address") << tr("Balances") << tr("SignType");
+    } else {
+        columns << tr("Label") << tr("Address") << tr("IsMiner");
+    }
+
     priv = new AddressTablePriv(wallet, this);
     priv->refreshAddressTable();
 }
@@ -197,8 +251,21 @@ QVariant AddressTableModel::data(const QModelIndex &index, int role) const
             }
         case Address:
             return rec->address;
-        case Position:
-            return rec->postion;
+        case 2:     //Balances or IsMiner
+            if (rec->type == AddressTableEntry::Receiving) {    //Balances
+                if (walletModel && walletModel->getOptionsModel()) {
+                    int unit = walletModel->getOptionsModel()->getDisplayUnit();
+                    return AbcmintUnits::formatWithUnit(unit, rec->balances);
+                }
+            } else if (rec->type == AddressTableEntry::Sending) {   //IsMiner
+                if (rec->isMiner) {
+                    return "✓";    //✓ ✔
+                } else {
+                    return " ";
+                }
+            }
+        case SignType:
+            return rec->signType;
         }
     }
     else if (role == Qt::FontRole)
@@ -326,6 +393,11 @@ QModelIndex AddressTableModel::index(int row, int column, const QModelIndex &par
     }
 }
 
+void AddressTableModel::refreshAddressTable()
+{
+    priv->refreshAddressTable();
+}
+
 void AddressTableModel::updateEntry(const QString &address, const QString &label, bool isMine, int status)
 {
     // Update address book model from Abcmint core
@@ -366,8 +438,11 @@ QString AddressTableModel::addRow(const QString &type, const QString &label, con
             editStatus = WALLET_UNLOCK_FAILURE;
             return QString();
         }
+
         CPubKey newKey;
-        if(!wallet->GetKeyFromPool(newKey, false))
+        unsigned int default_config_value = 0;
+        get_choised_info(NULL, NULL, NULL, &default_config_value);
+        if(!wallet->GetKeyFromPool(newKey, default_config_value, false))
         {
             editStatus = KEY_GENERATION_FAILURE;
             return QString();
@@ -437,4 +512,35 @@ int AddressTableModel::lookupAddress(const QString &address) const
 void AddressTableModel::emitDataChanged(int idx)
 {
     emit dataChanged(index(idx, 0, QModelIndex()), index(idx, columns.length()-1, QModelIndex()));
+}
+
+bool AddressTableModel::setDefaultKey(const QString &address)
+{
+    CKeyID keyid;
+    if (CAbcmintAddress(address.toStdString()).GetKeyID(keyid)) {
+        CPubKey pubKey;
+        if (wallet->GetPubKey(keyid, pubKey)) {
+            if (wallet->SetDefaultKey(pubKey)) {
+                priv->refreshAddressTable();
+                return true;
+            }
+        }
+    }
+    
+    return false;
+}
+
+bool AddressTableModel::setMinerAddress(const QString &address)
+{
+    std::string strAddr = address.toStdString();
+    if (wallet->SetMinerAddress(strAddr)) {
+        priv->refreshAddressTable();
+        return true;
+    }
+  
+    return false;
+}
+
+QString AddressTableModel::getMinerAddress() {
+    return QString::fromStdString(wallet->vchMinerAddress);
 }

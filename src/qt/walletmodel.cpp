@@ -14,13 +14,16 @@
 
 WalletModel::WalletModel(CWallet *wallet, OptionsModel *optionsModel, QObject *parent) :
     QObject(parent), wallet(wallet), optionsModel(optionsModel), addressTableModel(0),
+    sendAddressTableModel(0),
     transactionTableModel(0),
     cachedBalance(0), cachedUnconfirmedBalance(0), cachedImmatureBalance(0),
     cachedNumTransactions(0),
     cachedEncryptionStatus(Unencrypted),
     cachedNumBlocks(0)
 {
-    addressTableModel = new AddressTableModel(wallet, this);
+    addressTableModel = new AddressTableModel(wallet, this, AddressTableModel::Receive);
+    sendAddressTableModel = new AddressTableModel(wallet, this, AddressTableModel::Send);
+
     transactionTableModel = new TransactionTableModel(wallet, this);
 
     // This timer will be fired repeatedly to update the balance
@@ -36,9 +39,9 @@ WalletModel::~WalletModel()
     unsubscribeFromCoreSignals();
 }
 
-qint64 WalletModel::getBalance() const
+qint64 WalletModel::getBalance(const QString &fromAddress) const
 {
-    return wallet->GetBalance();
+    return wallet->GetBalance(fromAddress.toStdString());
 }
 
 qint64 WalletModel::getUnconfirmedBalance() const
@@ -96,10 +99,63 @@ void WalletModel::checkBalanceChanged()
     }
 }
 
+void WalletModel::refreshAddressTable()
+{
+    if(addressTableModel)
+        addressTableModel->refreshAddressTable();
+
+    if (sendAddressTableModel)
+        sendAddressTableModel->refreshAddressTable();
+}
+
 void WalletModel::updateTransaction(const QString &hash, int status)
 {
     if(transactionTableModel)
         transactionTableModel->updateTransaction(hash, status);
+
+    if (status == CT_UPDATED) {
+        uint256 updated;
+        updated.SetHex(hash.toStdString());
+        std::map<uint256, CWalletTx>::const_iterator mi = wallet->mapWallet.find(updated);
+        if (mi != wallet->mapWallet.end()) {
+            std::map<std::string, CTxDestination> mapAddressId;
+            const CWalletTx& wtx = (*mi).second;
+            BOOST_FOREACH(const CTxIn& txin, wtx.vin)
+            {
+                std::map<uint256, CWalletTx>::const_iterator it = wallet->mapWallet.find(txin.prevout.hash);
+                if (it == wallet->mapWallet.end())
+                    continue;
+
+                const CWalletTx& prev = (*it).second;
+                if (txin.prevout.n >= prev.vout.size())
+                    continue;
+
+                CTxDestination addressId;
+                if (ExtractDestination(prev.vout[txin.prevout.n].scriptPubKey, addressId) && ::IsMine(*wallet, addressId))
+                {
+                    mapAddressId[CAbcmintAddress(addressId).ToString()] = addressId;
+                }
+            }
+
+            BOOST_FOREACH(const CTxOut& txout, wtx.vout)
+            {
+                CTxDestination addressId;
+                if (ExtractDestination(txout.scriptPubKey, addressId) && ::IsMine(*wallet, addressId))
+                {
+                    mapAddressId[CAbcmintAddress(addressId).ToString()] = addressId;
+                }
+            }
+
+            std::map<std::string, CTxDestination>::const_iterator itaddr = mapAddressId.begin();
+            for (; itaddr != mapAddressId.end(); itaddr ++) {
+                std::map<CTxDestination, std::string>::iterator it = wallet->mapAddressBook.find(itaddr->second);
+                if (it != wallet->mapAddressBook.end() && addressTableModel) {
+                    printf("        WalletModel::updateTransaction() txhash=%s, address=%s\n", hash.toStdString().c_str(), itaddr->first.c_str());
+                    addressTableModel->updateEntry(QString::fromStdString(itaddr->first), QString::fromStdString(it->second), true, CT_UPDATED);
+                }
+            }
+        }
+    }
 
     // Balance and number of transactions might have changed
     checkBalanceChanged();
@@ -116,6 +172,9 @@ void WalletModel::updateAddressBook(const QString &address, const QString &label
 {
     if(addressTableModel)
         addressTableModel->updateEntry(address, label, isMine, status);
+
+    if(sendAddressTableModel)
+        sendAddressTableModel->updateEntry(address, label, isMine, status);
 }
 
 bool WalletModel::validateAddress(const QString &address)
@@ -124,7 +183,7 @@ bool WalletModel::validateAddress(const QString &address)
     return addressParsed.IsValid();
 }
 
-WalletModel::SendCoinsReturn WalletModel::sendCoins(const QList<SendCoinsRecipient> &recipients)
+WalletModel::SendCoinsReturn WalletModel::sendCoins(const QList<SendCoinsRecipient> &recipients, const QString &fromAddress)
 {
     qint64 total = 0;
     QSet<QString> setAddress;
@@ -156,13 +215,21 @@ WalletModel::SendCoinsReturn WalletModel::sendCoins(const QList<SendCoinsRecipie
         return DuplicateAddress;
     }
 
-    if(total > getBalance())
-    {
-        return AmountExceedsBalance;
+    int64 totalAmount;
+    std::string strFromAddress = fromAddress.toStdString();
+    if(!fromAddress.isEmpty()) {
+        CAbcmintAddress abcAddress(strFromAddress);
+        if (!abcAddress.IsValid() || !IsMine(*wallet, abcAddress.Get())) {
+            return InvalidFromAddress;
+        }
+        totalAmount = wallet->GetBalance(strFromAddress);
+    } else {
+        totalAmount = getBalance();
     }
 
-    if((total + nTransactionFee) > getBalance())
-    {
+    if (total > totalAmount) {
+        return AmountExceedsBalance;
+    } else if ((total + nTransactionFee) > totalAmount) {
         return SendCoinsReturn(AmountWithFeeExceedsBalance, nTransactionFee);
     }
 
@@ -182,8 +249,8 @@ WalletModel::SendCoinsReturn WalletModel::sendCoins(const QList<SendCoinsRecipie
         CReserveKey keyChange(wallet);
         int64 nFeeRequired = 0;
         std::string strFailReason;
-        bool fCreated = wallet->CreateTransaction(vecSend, wtx, keyChange, nFeeRequired, strFailReason);
-
+        
+        bool fCreated = wallet->CreateTransaction(vecSend, wtx, keyChange, nFeeRequired, strFailReason, strFromAddress);
         if(!fCreated)
         {
             if((total + nFeeRequired) > wallet->GetBalance())
@@ -235,6 +302,11 @@ OptionsModel *WalletModel::getOptionsModel()
 AddressTableModel *WalletModel::getAddressTableModel()
 {
     return addressTableModel;
+}
+
+AddressTableModel *WalletModel::getSendAddressTableModel()
+{
+    return sendAddressTableModel;
 }
 
 TransactionTableModel *WalletModel::getTransactionTableModel()
@@ -327,12 +399,19 @@ static void NotifyTransactionChanged(WalletModel *walletmodel, CWallet *wallet, 
                               Q_ARG(int, status));
 }
 
+static void NotifyRefreshAddressTable(WalletModel *walletmodel, CWallet *wallet)
+{
+    OutputDebugStringF("NotifyRefreshAddressTable\n");
+    QMetaObject::invokeMethod(walletmodel, "refreshAddressTable", Qt::QueuedConnection);
+}
+
 void WalletModel::subscribeToCoreSignals()
 {
     // Connect signals to wallet
     wallet->NotifyStatusChanged.connect(boost::bind(&NotifyKeyStoreStatusChanged, this, _1));
     wallet->NotifyAddressBookChanged.connect(boost::bind(NotifyAddressBookChanged, this, _1, _2, _3, _4, _5));
     wallet->NotifyTransactionChanged.connect(boost::bind(NotifyTransactionChanged, this, _1, _2, _3));
+    wallet->NotifyRefreshAddressTable.connect(boost::bind(NotifyRefreshAddressTable, this, _1));
 }
 
 void WalletModel::unsubscribeFromCoreSignals()
@@ -341,6 +420,7 @@ void WalletModel::unsubscribeFromCoreSignals()
     wallet->NotifyStatusChanged.disconnect(boost::bind(&NotifyKeyStoreStatusChanged, this, _1));
     wallet->NotifyAddressBookChanged.disconnect(boost::bind(NotifyAddressBookChanged, this, _1, _2, _3, _4, _5));
     wallet->NotifyTransactionChanged.disconnect(boost::bind(NotifyTransactionChanged, this, _1, _2, _3));
+    wallet->NotifyRefreshAddressTable.disconnect(boost::bind(NotifyRefreshAddressTable, this, _1));
 }
 
 // WalletModel::UnlockContext implementation
