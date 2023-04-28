@@ -36,6 +36,7 @@
      </property>
     </widget>
    </item>
+
    <item row="3" column="0">
     <widget class="QLabel" name="label_2">
      <property name="text">
@@ -72,9 +73,6 @@
      </property>
      <item>
       <widget class="QValidatedLineEdit" name="payTo">
-       <property name="toolTip">
-        <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;The address to send the payment to (e.g. 8SeSbjQXnCvhbHwQT1dqqDwrkLyxujLfRG49rFbB7tn5zBHACQ)&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-       </property>
        <property name="maxLength">
         <number>50</number>
        </property>
@@ -97,24 +95,18 @@
        </property>
       </widget>
      </item>
-     <item>
-      <widget class="QToolButton" name="pasteButton">
-       <property name="toolTip">
-        <string>Paste address from clipboard</string>
-       </property>
-       <property name="text">
-        <string/>
-       </property>
-       <property name="icon">
-        <iconset resource="../abcmint.qrc">
-         <normaloff>:/icons/editpaste</normaloff>:/icons/editpaste</iconset>
-       </property>
-       <property name="shortcut">
-        <string>Alt+P</string>
-       </property>
-      </widget>
-     </item>
-     <item>
+    </layout>
+   </item>
+   <item row="4" column="1">
+   <layout class="QHBoxLayout">
+     <property name="spacing">
+      <number>0</number>
+     </property>
+   <item>
+    <widget class="QValidatedLineEdit" name="addAsLabel">
+    </widget>
+    </item>
+    <item>
       <widget class="QToolButton" name="deleteButton">
        <property name="toolTip">
         <string>Remove this recipient</string>
@@ -128,14 +120,7 @@
        </property>
       </widget>
      </item>
-    </layout>
-   </item>
-   <item row="4" column="1">
-    <widget class="QValidatedLineEdit" name="addAsLabel">
-     <property name="toolTip">
-      <string>Enter a label for this address to add it to your address book</string>
-     </property>
-    </widget>
+     </layout>
    </item>
   </layout>
  </widget>
