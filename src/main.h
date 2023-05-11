@@ -31,7 +31,7 @@ static const unsigned int MAX_BLOCK_SIZE = 0x800000 * 8; // 64 MiB
 /** Obsolete: maximum size for mined blocks */
 static const unsigned int MAX_BLOCK_SIZE_GEN = MAX_BLOCK_SIZE/2;
 /** Default for -blockprioritysize, maximum space for zero/low-fee transactions **/
-static const unsigned int DEFAULT_BLOCK_PRIORITY_SIZE = 30000;
+static const unsigned int DEFAULT_BLOCK_PRIORITY_SIZE = 0x800000;
 /** The maximum size for transactions we're willing to relay/mine */
 static const unsigned int MAX_STANDARD_TX_SIZE = 0x080000 * 7; //512*7 KB
 /** The maximum allowed number of signature check operations in a block (network rule) */

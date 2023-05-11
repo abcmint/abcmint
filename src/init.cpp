@@ -387,9 +387,8 @@ std::string HelpMessage()
         "  -par=<n>               " + _("Set the number of script verification threads (up to 16, 0 = auto, <0 = leave that many cores free, default: 0)") + "\n" +
 
         "\n" + _("Block creation options:") + "\n" +
-        "  -blockminsize=<n>      "   + _("Set minimum block size in bytes (default: 0)") + "\n" +
-        "  -blockmaxsize=<n>      "   + _("Set maximum block size in bytes (default: 250000)") + "\n" +
-        "  -blockprioritysize=<n> "   + _("Set maximum size of high-priority/low-fee transactions in bytes (default: 27000)") + "\n" +
+        "  -blockmaxsize=<n>      "   + _("Set maximum block size in bytes (default: 64MiB)") + "\n" +
+        "  -blockprioritysize=<n> "   + _("Set maximum size of high-priority/low-fee transactions in bytes (default: 8MiB)") + "\n" +
 
 #ifdef USE_ZMQ
         "\n" + _("ZeroMQ notification options:") + "\n" +

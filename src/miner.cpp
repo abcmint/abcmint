@@ -2404,9 +2404,6 @@ CBlockTemplate* CreateNewBlock(CReserveKey& reservekey)
         unsigned int nBlockPrioritySize = GetArg("-blockprioritysize", DEFAULT_BLOCK_PRIORITY_SIZE);
         nBlockPrioritySize = std::min(nBlockMaxSize, nBlockPrioritySize);
 
-        unsigned int nBlockMinSize = GetArg("-blockminsize", 0);
-        nBlockMinSize = std::min(nBlockMaxSize, nBlockMinSize);
-
         // Priority order to process transactions
         list<COrphan> vOrphan; // list memory doesn't move
         map<uint256, vector<COrphan*> > mapDependers;
@@ -2513,14 +2510,15 @@ CBlockTemplate* CreateNewBlock(CReserveKey& reservekey)
             if (nBlockSigOps + nTxSigOps >= MAX_BLOCK_SIGOPS)
                 continue;
 
-            // Skip free transactions if we're past the minimum block size:
-            if (fSortedByFee && (dFeePerKb < CTransaction::nMinTxFee) && (nBlockSize + nTxSize >= nBlockMinSize))
+            // Skip low fee transactions if we're past the minimum block size:
+            if (fSortedByFee && (dFeePerKb < CTransaction::nMinTxFee) && (nBlockSize + nTxSize >= nBlockPrioritySize))
+            {
                 continue;
+            }
 
             // Prioritize by fee once past the priority size or we run out of high-priority
             // transactions:
-            if (!fSortedByFee &&
-                ((nBlockSize + nTxSize >= nBlockPrioritySize) || (dPriority < COIN * 144 / 250)))
+            if (!fSortedByFee && ((nBlockSize + nTxSize >= nBlockPrioritySize) || (dPriority < COIN * 144 / 250)))
             {
                 fSortedByFee = true;
                 comparer = TxPriorityCompare(fSortedByFee);

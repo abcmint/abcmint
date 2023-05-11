@@ -107,7 +107,7 @@ bool CPubKey::Verify(unsigned int config_value, unsigned char* hash_buf, unsigne
             std::vector<unsigned char> hashbuf;
             hashbuf.resize(hashsize);
             rainbowplus_hash(config_value, 0, hash_buf, hash_size, hashbuf.data(), hashbuf.size());
-            int status = rainbowplus_verify(config_value, 0, hashbuf.data(), hashbuf.size(), sign_buf, sign_size, vchPubKey.data(), vchPubKey.size());
+            status = rainbowplus_verify(config_value, 0, hashbuf.data(), hashbuf.size(), sign_buf, sign_size, vchPubKey.data(), vchPubKey.size());
             if (1 == status) {
                 return true;
             }
