@@ -164,7 +164,7 @@ contains(USE_GPU, -) {
     #LIBS += -L /usr/local/cuda/lib64 -lcudart
 
     unix {
-        gengpumining.commands = cd $$PWD/src; $(MAKE) -f makefile-libgpumining.unix
+        gengpumining.commands = cd $$PWD/src; $(MAKE) -f makefile-libgpumining.unix clean; $(MAKE) -f makefile-libgpumining.unix
         QMAKE_CLEAN += $$PWD/src/obj/libgpumining.a; cd $$PWD/src; $(MAKE) -f makefile-libgpumining.unix clean
     }
     gengpumining.depends = FORCE
