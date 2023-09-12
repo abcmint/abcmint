@@ -2033,6 +2033,7 @@ bool CScriptCompressor::Compress(std::vector<unsigned char> &out) const
         out.resize(pubkey.size()+1);
 		out[0] = 0x02;
         memcpy(&out[1], &pubkey[0], pubkey.size());
+        return true;
     }
     return false;
 }

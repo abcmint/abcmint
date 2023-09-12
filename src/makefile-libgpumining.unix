@@ -15,4 +15,5 @@ obj/kernel.inc: gen_kernel.py
 .PHONY:clean
 clean:
 	-rm -f obj/kernel.inc
+	-rm -f obj/gpumining.o
 	-rm -f obj/libgpumining.a
