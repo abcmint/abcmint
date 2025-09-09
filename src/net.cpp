@@ -1224,26 +1224,18 @@ void MapPort(bool)
 // The first name is used as information source for addrman.
 // The second name should resolve to a list of seed addresses.
 static const char *strMainNetDNSSeed[][2] = {
-    {"abcmint-bohr.com", "abcmint-bohr.com"},
-    {"abcmint-einstein.com", "abcmint-einstein.com"},
-    {"abcmint-euclid.com","abcmint-euclid.com"},
-    {"abcmint-feynman.com", "abcmint-feynman.com"},
-    {"abcmint-gauss.com", "abcmint-gauss.com"},
-    {"abcmint-newton.com", "abcmint-newton.com"},
-    {"abcmint-planck.com", "abcmint-planck.com"},
-    {"abcmint-turing.com", "abcmint-turing.com"},
+
+    {"raq-planck.com", "raq-planck.com"},
+    {"raq-turing.com", "raq-turing.com"},
+
     {NULL, NULL}
 };
 
 static const char *strTestNetDNSSeed[][2] = {
-    {"abcmint-bohr.com", "abcmint-bohr.com"},
-    {"abcmint-einstein.com", "abcmint-einstein.com"},
-    {"abcmint-euclid.com","abcmint-euclid.com"},
-    {"abcmint-feynman.com", "abcmint-feynman.com"},
-    {"abcmint-gauss.com", "abcmint-gauss.com"},
-    {"abcmint-newton.com", "abcmint-newton.com"},
-    {"abcmint-planck.com", "abcmint-planck.com"},
-    {"abcmint-turing.com", "abcmint-turing.com"},
+
+    {"raq-planck.com", "raq-planck.com"},
+    {"raq-turing.com", "raq-turing.com"},
+
     {NULL, NULL}
 };
 
